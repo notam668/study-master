@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyMaster - 运营监控与学生学情管理后台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .badge { padding: 3px 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .surname-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 15px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+    }
+    .modal-backdrop {
+      background-color: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- 顶部全局导航栏 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl shadow-md shadow-indigo-100">
+          🎓
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-base font-bold text-slate-900">StudyMaster 学生学情与考培后台</h1>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>服务在线
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">实时掌握学生信息（姓名、班级、电话号码）、做题进度与模考成绩</p>
+        </div>
+      </div>
+
+      <!-- 右侧快捷操作与数据源切换 -->
+      <div class="flex items-center space-x-3">
+        <!-- 数据源切换 -->
+        <div class="flex items-center space-x-1.5">
+          <span class="text-xs text-slate-400 font-medium hidden md:inline">数据源:</span>
+          <select id="apiSourceSelect" onchange="switchApiSource()" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 font-bold focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+            <option value="auto">🌐 自动源 (当前服务)</option>
+            <option value="cloud">☁️ 微信云托管正式线上</option>
+            <option value="local">💻 本地开发 (localhost:3000)</option>
+          </select>
+        </div>
+
+        <div class="hidden sm:flex items-center space-x-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+          <label class="flex items-center space-x-1.5 cursor-pointer">
+            <input type="checkbox" id="autoRefreshToggle" checked class="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5" onchange="toggleAutoRefresh()">
+            <span>自动刷新 (5s)</span>
+          </label>
+          <span class="text-slate-300">|</span>
+          <span id="lastUpdated" class="text-slate-400 font-mono">获取中...</span>
+        </div>
+
+        <a href="/announcement.html" class="px-3 py-1.5 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+          <span>📢</span>
+          <span>开屏公告</span>
+        </a>
+
+        <a href="/reminder.html" class="px-3 py-1.5 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+          <span>⏰</span>
+          <span>上课提醒</span>
+        </a>
+
+        <button onclick="fetchData()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+          <span>🔄</span>
+          <span>刷新</span>
+        </button>
+
+        <div class="relative inline-block text-left">
+          <button onclick="toggleExportMenu()" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1 shadow-sm">
+            <span>📥</span>
+            <span>导出报表 ▼</span>
+          </button>
+          <div id="exportDropdown" class="hidden absolute right-0 mt-2 w-48 rounded-xl shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 p-1.5 space-y-1">
+            <a href="/api/admin/export/users.csv" download class="block px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-lg transition">
+              👥 导出学生名册 (CSV/Excel)
+            </a>
+            <a href="/api/admin/export/exams.csv" download class="block px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-lg transition">
+              📝 导出模考成绩总表 (CSV/Excel)
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主体容器 -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 flex-1 w-full">
+
+    <!-- 顶栏数据核心指标 6 宫格 -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">总建档学生</div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statTotalUsers" class="text-2xl font-black text-slate-900 font-mono">--</span>
+          <span id="statProfileRate" class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">--已完善</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">已完善: <span id="statCompletedProfiles" class="font-semibold text-slate-700">--</span> 人</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">今日新增授权</div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statTodayUsers" class="text-2xl font-black text-indigo-600 font-mono">--</span>
+          <span class="text-xs text-indigo-500 font-medium">✨ 新人</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">今日新微信授权进入</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">今日活跃学生 (DAU)</div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statActiveToday" class="text-2xl font-black text-cyan-600 font-mono">--</span>
+          <span class="text-xs text-cyan-600 font-medium">⚡ 活跃</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">今日有访问/答题的学生</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">模考交卷总数</div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statExamsFinished" class="text-2xl font-black text-amber-600 font-mono">--</span>
+          <span id="statExamPassRate" class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">--及格</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">全平台模拟考试完成量</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">模考全员平均分</div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statOverallAvgScore" class="text-2xl font-black text-emerald-600 font-mono">--</span>
+          <span class="text-xs text-emerald-600 font-medium">分</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">所有交卷答卷平均成绩</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">自由刷题总次</div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="statPractices" class="text-2xl font-black text-purple-600 font-mono">--</span>
+          <span class="text-xs text-purple-600 font-medium">📖 练习</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">累计自由练习启动次数</div>
+      </div>
+
+    </div>
+
+    <!-- 选项卡导航 -->
+    <div class="border-b border-slate-200">
+      <nav class="flex space-x-6 text-sm font-semibold">
+        <button onclick="switchTab('students')" id="tabBtn-students" class="py-3 px-1 border-b-2 border-indigo-600 text-indigo-600 flex items-center space-x-2 transition">
+          <span>👥 学生花名册与学情</span>
+          <span id="badgeStudentCount" class="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full text-xs">--</span>
+        </button>
+        <button onclick="switchTab('exams')" id="tabBtn-exams" class="py-3 px-1 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition">
+          <span>📝 模考全量成绩单</span>
+          <span id="badgeExamCount" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs">--</span>
+        </button>
+        <button onclick="switchTab('classes')" id="tabBtn-classes" class="py-3 px-1 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition">
+          <span>🏫 班级考勤与学情看板</span>
+          <span id="badgeClassCount" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs">--</span>
+        </button>
+        <button onclick="switchTab('logs')" id="tabBtn-logs" class="py-3 px-1 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition">
+          <span>⚡ 实时动态流水 & 热门题库</span>
+        </button>
+        <button onclick="switchTab('codes')" id="tabBtn-codes" class="py-3 px-1 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition">
+          <span>🔑 模考激活码管理</span>
+          <span id="badgeCodeCount" class="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full text-xs">--</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- ========================= Tab 1: 学生花名册 ========================= -->
+    <div id="tabContent-students" class="space-y-4">
+      
+      <!-- 搜索过滤栏 -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+          <!-- 搜索输入框 -->
+          <div class="relative flex-1 min-w-[200px] max-w-md">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">🔍</span>
+            <input type="text" id="searchInput" placeholder="搜索姓名 / 班级 / 电话号码..." 
+                   class="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50"
+                   oninput="applyStudentFilters()">
+          </div>
+
+          <!-- 班级筛选下拉 -->
+          <select id="classFilterSelect" class="border border-slate-200 rounded-lg text-xs py-2 px-3 bg-white text-slate-700 font-medium" onchange="applyStudentFilters()">
+            <option value="all">🏫 全部班级</option>
+          </select>
+
+          <!-- 资料完善状态 -->
+          <select id="profileFilterSelect" class="border border-slate-200 rounded-lg text-xs py-2 px-3 bg-white text-slate-700 font-medium" onchange="applyStudentFilters()">
+            <option value="all">📋 全部资料状态</option>
+            <option value="completed">✅ 已完善信息 (姓名/班级/电话)</option>
+            <option value="pending">⏳ 待完善信息</option>
+          </select>
+
+          <!-- 考试状态筛选 -->
+          <select id="examFilterSelect" class="border border-slate-200 rounded-lg text-xs py-2 px-3 bg-white text-slate-700 font-medium" onchange="applyStudentFilters()">
+            <option value="all">🎯 全部答题情况</option>
+            <option value="has_exam">已考过模考</option>
+            <option value="no_exam">未参加过模考</option>
+          </select>
+        </div>
+
+        <div class="text-xs text-slate-500 font-medium">
+          匹配到 <span id="filteredStudentCount" class="font-bold text-indigo-600">0</span> 位学生
+        </div>
+      </div>
+
+      <!-- 学生表格卡片 -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-slate-400 border-b border-slate-200 uppercase font-semibold">
+              <tr>
+                <th class="py-3 px-4">学生姓名 / 身份</th>
+                <th class="py-3 px-4">所在班级</th>
+                <th class="py-3 px-4">学号</th>
+                <th class="py-3 px-4">电话号码</th>
+                <th class="py-3 px-4">激活码状态</th>
+                <th class="py-3 px-4">模考次数</th>
+                <th class="py-3 px-4">最高分 / 平均分</th>
+                <th class="py-3 px-4">平均正确率</th>
+                <th class="py-3 px-4">刷题次数</th>
+                <th class="py-3 px-4">最近活跃 / 注册时间</th>
+                <th class="py-3 px-4 text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody id="studentsTableBody" class="divide-y divide-slate-100 text-slate-700">
+              <tr>
+                <td colspan="11" class="py-12 text-center text-slate-400">正在加载学生数据...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================= Tab 2: 模考全量成绩单 ========================= -->
+    <div id="tabContent-exams" class="space-y-4 hidden">
+      
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+          <div class="relative flex-1 min-w-[200px] max-w-md">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">🔍</span>
+            <input type="text" id="examSearchInput" placeholder="按姓名 / 班级 / 手机号 / 题库科目搜索成绩..." 
+                   class="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50"
+                   oninput="applyExamFilters()">
+          </div>
+
+          <select id="examPassedFilter" class="border border-slate-200 rounded-lg text-xs py-2 px-3 bg-white text-slate-700 font-medium" onchange="applyExamFilters()">
+            <option value="all">🏆 全部成绩结果</option>
+            <option value="passed">✅ 及格 (≥60分)</option>
+            <option value="failed">❌ 不及格 (<60分)</option>
+          </select>
+        </div>
+
+        <div class="text-xs text-slate-500 font-medium">
+          显示 <span id="filteredExamCount" class="font-bold text-amber-600">0</span> 份交卷记录
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-slate-400 border-b border-slate-200 uppercase font-semibold">
+              <tr>
+                <th class="py-3 px-4">交卷时间</th>
+                <th class="py-3 px-4">考生姓名</th>
+                <th class="py-3 px-4">所在班级</th>
+                <th class="py-3 px-4">学号</th>
+                <th class="py-3 px-4">电话号码</th>
+                <th class="py-3 px-4">考试科目 / 题库</th>
+                <th class="py-3 px-4">得分 / 满分</th>
+                <th class="py-3 px-4">正确率</th>
+                <th class="py-3 px-4">考试用时</th>
+                <th class="py-3 px-4 text-center">状态</th>
+              </tr>
+            </thead>
+            <tbody id="examsTableBody" class="divide-y divide-slate-100 text-slate-700">
+              <tr>
+                <td colspan="10" class="py-12 text-center text-slate-400">暂无考试成绩记录</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================= Tab 3: 班级学情看板 ========================= -->
+    <div id="tabContent-classes" class="space-y-4 hidden">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="classCardsGrid">
+        <div class="p-8 text-center text-slate-400 col-span-full">正在统计各班级情况...</div>
+      </div>
+    </div>
+
+    <!-- ========================= Tab 4: 实时动态与热门题库 ========================= -->
+    <div id="tabContent-logs" class="grid grid-cols-1 lg:grid-cols-3 gap-6 hidden">
+      
+      <!-- 热门题库 -->
+      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+        <h2 class="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
+          <span>🔥 题库热度榜</span>
+          <span class="text-xs font-normal text-slate-400">按学生做题互动频次</span>
+        </h2>
+        <div id="popularBanksList" class="space-y-2.5 flex-1 flex flex-col justify-start">
+          <div class="text-xs text-slate-400 text-center py-8">暂无题库做题数据</div>
+        </div>
+      </div>
+
+      <!-- 实时行为动态流水 -->
+      <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
+            <span class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span>学生实时行为流水 (最新 50 条)</span>
+          </h2>
+          <span class="text-xs text-slate-400 font-mono">Realtime Stream</span>
+        </div>
+
+        <div class="overflow-x-auto max-h-[460px] overflow-y-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="text-slate-400 border-b border-slate-100 uppercase sticky top-0 bg-white font-semibold">
+              <tr>
+                <th class="py-2.5 px-3">时间</th>
+                <th class="py-2.5 px-3">学生 (姓名/班级/电话)</th>
+                <th class="py-2.5 px-3">行为类型</th>
+                <th class="py-2.5 px-3">详情内容</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody" class="divide-y divide-slate-100">
+              <tr>
+                <td colspan="4" class="py-8 text-center text-slate-400">正在加载数据...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================= Tab 5: 模考激活码管理 ========================= -->
+    <div id="tabContent-codes" class="space-y-4 hidden">
+      
+      <!-- 激活码核心指标 4 宫格 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">总激活码数</div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="statTotalCodes" class="text-2xl font-black text-slate-900 font-mono">--</span>
+            <span class="text-xs font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">张</span>
+          </div>
+          <div class="text-[11px] text-slate-500 mt-1">系统已录入的激活码总量</div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">已使用 (已匹配考生)</div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="statUsedCodes" class="text-2xl font-black text-emerald-600 font-mono">--</span>
+            <span id="statCodeRate" class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">--已兑换</span>
+          </div>
+          <div class="text-[11px] text-slate-500 mt-1">考生已成功输入解锁</div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">未使用 (待发放)</div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="statUnusedCodes" class="text-2xl font-black text-indigo-600 font-mono">--</span>
+            <span class="text-xs text-indigo-500 font-medium">可用</span>
+          </div>
+          <div class="text-[11px] text-slate-500 mt-1">随时可复制发放给学生</div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">快捷生成激活码</div>
+          <div class="mt-2 flex items-center space-x-2">
+            <button onclick="openAddCodeModal()" class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1 shadow-sm">
+              <span>➕</span>
+              <span>自定义添加</span>
+            </button>
+            <button onclick="batchGenerateCodes(10)" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1 border border-slate-200">
+              <span>⚡</span>
+              <span>生成10个</span>
+            </button>
+          </div>
+          <div class="text-[11px] text-slate-400 mt-1">支持自定义命名或批量生成</div>
+        </div>
+      </div>
+
+      <!-- 搜索过滤与分类筛选栏 -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+          <!-- 搜索输入框 -->
+          <div class="relative flex-1 min-w-[200px] max-w-md">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">🔍</span>
+            <input type="text" id="codeSearchInput" placeholder="搜索激活码 / 考生姓名 / 班级 / 电话..." 
+                   class="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50"
+                   oninput="applyCodeFilters()">
+          </div>
+
+          <!-- 状态分类切换 -->
+          <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs font-medium">
+            <button onclick="setCodeSubTab('all')" id="codeSubTab-all" class="px-3 py-1.5 rounded-md font-semibold text-indigo-600 bg-white shadow-xs transition">
+              全部 (<span id="countCodesAll">0</span>)
+            </button>
+            <button onclick="setCodeSubTab('used')" id="codeSubTab-used" class="px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 transition">
+              ✅ 已使用 · 实时匹配 (<span id="countCodesUsed">0</span>)
+            </button>
+            <button onclick="setCodeSubTab('unused')" id="codeSubTab-unused" class="px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 transition">
+              ⏳ 未使用 · 待发放 (<span id="countCodesUnused">0</span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- 批量快捷复制与导出 -->
+        <div class="flex items-center space-x-2">
+          <button onclick="copyAllUnusedCodes()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1.5 shadow-sm">
+            <span>📋</span>
+            <span>一键复制全部剩余激活码 (<span id="btnCopyUnusedCount">0</span>个)</span>
+          </button>
+          <a href="/api/admin/export/unused-codes" download class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center space-x-1 border border-slate-200">
+            <span>📥</span>
+            <span>导出TXT</span>
+          </a>
+          <div class="text-xs text-slate-500 font-medium ml-2">
+            显示 <span id="filteredCodeCount" class="font-bold text-indigo-600">0</span> 个
+          </div>
+        </div>
+      </div>
+
+      <!-- 激活码数据表格 -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-slate-400 border-b border-slate-200 uppercase font-semibold">
+              <tr>
+                <th class="py-3 px-4">激活码</th>
+                <th class="py-3 px-4">使用状态</th>
+                <th class="py-3 px-4">实时匹配考生</th>
+                <th class="py-3 px-4">考生所在班级</th>
+                <th class="py-3 px-4">考生电话号码</th>
+                <th class="py-3 px-4">绑定账号 (OpenID)</th>
+                <th class="py-3 px-4">激活解锁时间</th>
+                <th class="py-3 px-4 text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody id="codesTableBody" class="divide-y divide-slate-100 text-slate-700">
+              <tr>
+                <td colspan="8" class="py-12 text-center text-slate-400">正在加载激活码数据...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ========================= 添加激活码弹窗 ========================= -->
+  <div id="addCodeModal" class="fixed inset-0 z-50 modal-backdrop hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div class="p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="text-xl">🔑</span>
+          <h3 class="text-base font-bold">添加 / 批量生成激活码</h3>
+        </div>
+        <button onclick="closeAddCodeModal()" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm transition">
+          ✕
+        </button>
+      </div>
+      <div class="p-5 space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-700 font-bold mb-1.5">自定义激活码（支持多个，逗号或换行隔开）：</label>
+          <input type="text" id="manualCodeInput" placeholder="例如：VIP2026, STUDY888, MATH100" 
+                 class="w-full px-3 py-2 border border-slate-200 rounded-lg font-mono text-sm focus:ring-2 focus:ring-indigo-500 bg-slate-50 uppercase">
+          <p class="text-[11px] text-slate-400 mt-1">自动转大写、去空格，重复码会自动过滤。</p>
+        </div>
+        <div class="pt-3 border-t border-slate-100">
+          <label class="block text-slate-700 font-bold mb-1.5">或者按规则批量随机生成：</label>
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-500">前缀:</span>
+            <input type="text" id="batchPrefixInput" value="VIP" class="w-20 px-2 py-1.5 border border-slate-200 rounded text-xs font-mono uppercase bg-slate-50">
+            <span class="text-slate-500">数量:</span>
+            <input type="number" id="batchCountInput" value="10" min="1" max="100" class="w-16 px-2 py-1.5 border border-slate-200 rounded text-xs font-mono bg-slate-50">
+            <button onclick="submitBatchGenerate()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded text-xs font-bold transition">
+              一键生成
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
+        <button onclick="closeAddCodeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold transition">
+          取消
+        </button>
+        <button onclick="submitManualCode()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition">
+          确认添加
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= 学生详情弹窗 (Modal) ========================= -->
+  <div id="studentDetailModal" class="fixed inset-0 z-50 modal-backdrop hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
+      
+      <!-- 弹窗头部 -->
+      <div class="p-6 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-3.5">
+          <div id="modalAvatar" class="w-12 h-12 rounded-full bg-indigo-500 border-2 border-white/20 flex items-center justify-center text-xl font-bold">
+            学
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h3 id="modalRealName" class="text-lg font-bold">--</h3>
+              <span id="modalProfileTag" class="text-[10px] px-2 py-0.5 rounded font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">已完善</span>
+            </div>
+            <div class="text-xs text-slate-300 mt-1 flex flex-wrap items-center gap-3">
+              <span id="modalClass">🏫 班级: --</span>
+              <span id="modalStudentId">🎓 学号: --</span>
+              <span id="modalPhone">📱 电话: --</span>
+              <span id="modalCode" class="text-amber-300 font-medium">🔑 激活码: --</span>
+            </div>
+          </div>
+        </div>
+        <button onclick="closeStudentModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg transition">
+          ✕
+        </button>
+      </div>
+
+      <!-- 弹窗统计 4 宫格 -->
+      <div class="grid grid-cols-4 gap-3 p-4 bg-slate-50 border-b border-slate-200">
+        <div class="bg-white p-3 rounded-xl border border-slate-200 text-center">
+          <div class="text-[11px] text-slate-400 font-medium">模考总次数</div>
+          <div id="modalExamCount" class="text-lg font-bold text-indigo-600 font-mono mt-0.5">0</div>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200 text-center">
+          <div class="text-[11px] text-slate-400 font-medium">最高得分</div>
+          <div id="modalMaxScore" class="text-lg font-bold text-emerald-600 font-mono mt-0.5">0</div>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200 text-center">
+          <div class="text-[11px] text-slate-400 font-medium">平均得分</div>
+          <div id="modalAvgScore" class="text-lg font-bold text-amber-600 font-mono mt-0.5">0</div>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200 text-center">
+          <div class="text-[11px] text-slate-400 font-medium">平均正确率</div>
+          <div id="modalAvgAccuracy" class="text-lg font-bold text-purple-600 font-mono mt-0.5">0%</div>
+        </div>
+      </div>
+
+      <!-- 弹窗主体内容滚动区 -->
+      <div class="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+        
+        <!-- 模考成绩列表 -->
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-3 flex items-center space-x-1.5">
+            <span>🏆 历次模拟考试答卷记录</span>
+          </h4>
+          <div id="modalExamList" class="space-y-2">
+            <div class="text-slate-400 text-center py-4 bg-slate-50 rounded-lg">该学生暂未参加过模拟考试</div>
+          </div>
+        </div>
+
+        <!-- 详细账号属性 -->
+        <div class="border-t border-slate-100 pt-4">
+          <h4 class="font-bold text-slate-900 text-sm mb-3">📋 账号底层档案</h4>
+          <div class="grid grid-cols-2 gap-2 text-slate-600 bg-slate-50 p-3.5 rounded-xl">
+            <div>微信标识 (OpenID): <span id="modalOpenid" class="font-mono text-slate-800">--</span></div>
+            <div>微信昵称: <span id="modalNickname" class="text-slate-800">--</span></div>
+            <div>首次进入时间: <span id="modalCreatedAt" class="font-mono text-slate-800">--</span></div>
+            <div>最近登录时间: <span id="modalLastLogin" class="font-mono text-slate-800">--</span></div>
+            <div>累计登录次数: <span id="modalLoginCount" class="font-semibold text-indigo-600">--</span></div>
+            <div>最近访问 IP: <span id="modalLastIp" class="font-mono text-slate-800">--</span></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 弹窗底部操作 -->
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <button onclick="closeStudentModal()" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold transition">
+          关闭
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // 全局数据缓存
+    let globalData = null
+    let currentTab = 'students'
+    let autoRefreshTimer = null
+
+    // 日期格式化
+    function formatDate(ts) {
+      if (!ts) return '--'
+      const d = new Date(ts)
+      const pad = n => n.toString().padStart(2, '0')
+      return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    }
+
+    function getEventBadge(type, score, total) {
+      switch(type) {
+        case 'user_register':
+          return '<span class="badge bg-emerald-100 text-emerald-800">✨ 首次授权</span>'
+        case 'user_login':
+          return '<span class="badge bg-blue-100 text-blue-800">🔑 登录进入</span>'
+        case 'update_profile':
+          return '<span class="badge bg-cyan-100 text-cyan-800">📝 完善学生信息</span>'
+        case 'start_practice':
+          return '<span class="badge bg-indigo-100 text-indigo-800">📖 开始刷题</span>'
+        case 'finish_exam':
+          const isPassed = (score && total) ? (score / total >= 0.6) : false
+          return `<span class="badge ${isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'} font-bold">🏆 模考交卷 (${score}/${total}分)</span>`
+        case 'page_view':
+          return '<span class="badge bg-slate-100 text-slate-600">👀 浏览页面</span>'
+        case 'save_bank':
+          return '<span class="badge bg-purple-100 text-purple-800">💾 收藏题库</span>'
+        default:
+          return `<span class="badge bg-slate-100 text-slate-600">${type}</span>`
+      }
+    }
+
+    // 切换 Tab 页面
+    function switchTab(tabId) {
+      currentTab = tabId
+      const tabs = ['students', 'exams', 'classes', 'logs', 'codes']
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tabBtn-${t}`)
+        const content = document.getElementById(`tabContent-${t}`)
+        if (t === tabId) {
+          btn.className = 'py-3 px-1 border-b-2 border-indigo-600 text-indigo-600 flex items-center space-x-2 transition font-bold'
+          content.classList.remove('hidden')
+        } else {
+          btn.className = 'py-3 px-1 border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center space-x-2 transition'
+          content.classList.add('hidden')
+        }
+      })
+    }
+
+    // 控制导出菜单显示/隐藏
+    function toggleExportMenu() {
+      const el = document.getElementById('exportDropdown')
+      el.classList.toggle('hidden')
+    }
+    document.addEventListener('click', (e) => {
+      const dropdown = document.getElementById('exportDropdown')
+      if (!e.target.closest('.relative')) {
+        dropdown.classList.add('hidden')
+      }
+    })
+
+    // 控制自动刷新
+    function toggleAutoRefresh() {
+      const isChecked = document.getElementById('autoRefreshToggle').checked
+      if (isChecked) {
+        if (!autoRefreshTimer) autoRefreshTimer = setInterval(fetchData, 5000)
+      } else {
+        if (autoRefreshTimer) {
+          clearInterval(autoRefreshTimer)
+          autoRefreshTimer = null
+        }
+      }
+    }
+
+    let currentApiSource = 'auto'
+
+    function getApiUrl(endpoint) {
+      if (currentApiSource === 'cloud') {
+        return `https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com${endpoint}`
+      }
+      if (currentApiSource === 'local') {
+        return `http://localhost:3000${endpoint}`
+      }
+      return endpoint
+    }
+
+    function switchApiSource() {
+      currentApiSource = document.getElementById('apiSourceSelect').value
+      fetchData()
+    }
+
+    // 拉取后端最新数据
+    async function fetchData() {
+      try {
+        const res = await fetch(getApiUrl('/api/admin/dashboard'))
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          globalData = json.data
+          renderDashboard(globalData)
+        }
+      } catch (err) {
+        console.error('获取监控数据失败:', err)
+      }
+    }
+
+    function renderDashboard(data) {
+      document.getElementById('lastUpdated').innerText = new Date().toLocaleTimeString()
+
+      const ov = data.overview || {}
+      document.getElementById('statTotalUsers').innerText = ov.totalUsers ?? 0
+      document.getElementById('statTodayUsers').innerText = ov.todayUsers ?? 0
+      document.getElementById('statActiveToday').innerText = ov.activeUsersToday ?? 0
+      document.getElementById('statExamsFinished').innerText = ov.totalExamsFinished ?? 0
+      document.getElementById('statPractices').innerText = ov.totalPracticesStarted ?? 0
+      document.getElementById('statCompletedProfiles').innerText = ov.completedProfiles ?? 0
+      document.getElementById('statOverallAvgScore').innerText = ov.overallAvgScore ?? 0
+
+      const rate = ov.totalUsers > 0 ? Math.round(((ov.completedProfiles || 0) / ov.totalUsers) * 100) : 0
+      document.getElementById('statProfileRate').innerText = `${rate}% 已完善`
+      document.getElementById('statExamPassRate').innerText = `${ov.examPassRate ?? 0}% 及格率`
+
+      // 更新 Tab 徽章数字
+      document.getElementById('badgeStudentCount').innerText = (data.users || []).length
+      document.getElementById('badgeExamCount').innerText = (data.allExams || []).length
+      document.getElementById('badgeClassCount').innerText = (data.classStats || []).length
+
+      // 动态填充班级筛选下拉框
+      populateClassFilter(data.classStats || [])
+
+      // 渲染各个视图
+      applyStudentFilters()
+      applyExamFilters()
+      renderClassStats(data.classStats || [])
+      renderPopularBanks(data.popularBanks || [])
+      renderLogs(data.recentLogs || [])
+
+      if (data.activationStats) {
+        document.getElementById('badgeCodeCount').innerText = data.activationStats.total || 0
+        renderActivationCodes(data.activationStats)
+      }
+    }
+
+    function populateClassFilter(classes) {
+      const select = document.getElementById('classFilterSelect')
+      const currentVal = select.value
+      let optionsHtml = '<option value="all">🏫 全部班级</option>'
+      classes.forEach(c => {
+        optionsHtml += `<option value="${c.className}">${c.className} (${c.studentCount}人)</option>`
+      })
+      select.innerHTML = optionsHtml
+      select.value = currentVal || 'all'
+    }
+
+    // 学生过滤与渲染
+    function applyStudentFilters() {
+      if (!globalData || !globalData.users) return
+
+      const q = (document.getElementById('searchInput').value || '').trim().toLowerCase()
+      const classFilter = document.getElementById('classFilterSelect').value
+      const profileFilter = document.getElementById('profileFilterSelect').value
+      const examFilter = document.getElementById('examFilterSelect').value
+
+      const filtered = globalData.users.filter(u => {
+        // 关键字匹配 (姓名、班级、电话、OpenID)
+        const matchQ = !q || 
+          (u.realName && u.realName.toLowerCase().includes(q)) ||
+          (u.className && u.className.toLowerCase().includes(q)) ||
+          ((u.phone || u.studentId) && String(u.phone || u.studentId).includes(q)) ||
+          (u.openid && u.openid.toLowerCase().includes(q)) ||
+          (u.nickname && u.nickname.toLowerCase().includes(q))
+
+        // 班级匹配
+        const matchClass = classFilter === 'all' || (u.className === classFilter)
+
+        // 资料状态匹配
+        const matchProfile = profileFilter === 'all' ||
+          (profileFilter === 'completed' && u.isProfileCompleted) ||
+          (profileFilter === 'pending' && !u.isProfileCompleted)
+
+        // 考试情况匹配
+        const matchExam = examFilter === 'all' ||
+          (examFilter === 'has_exam' && (u.examCount > 0)) ||
+          (examFilter === 'no_exam' && (!u.examCount || u.examCount === 0))
+
+        return matchQ && matchClass && matchProfile && matchExam
+      })
+
+      document.getElementById('filteredStudentCount').innerText = filtered.length
+      renderStudentsTable(filtered)
+    }
+
+    function renderStudentsTable(users) {
+      const tbody = document.getElementById('studentsTableBody')
+      if (!users || users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="py-12 text-center text-slate-400">没有找到匹配的学生记录</td></tr>'
+        return
+      }
+
+      tbody.innerHTML = users.map(u => {
+        const studentId = u.studentId || ''
+        const validMobileRegex = /^1[3-9]\d{9}$/
+        const rawPhone = (u.displayPhone || (u.phone && validMobileRegex.test(String(u.phone).trim()) ? String(u.phone).trim() : '')).trim()
+        const boundCode = u.boundCode || (u.examUnlockCode ? u.examUnlockCode : '')
+        const isExamUnlocked = Boolean(u.isExamUnlocked)
+
+        return `
+          <tr class="hover:bg-slate-50/80 transition">
+            <!-- 姓名与身份 -->
+            <td class="py-3 px-4">
+              <div class="flex items-center space-x-2.5">
+                <div class="surname-avatar">${u.avatarText || (u.realName ? u.realName.charAt(0) : (u.nickname ? u.nickname.charAt(0) : '客'))}</div>
+                <div>
+                  <div class="flex items-center space-x-1.5">
+                    <span class="font-bold text-slate-900 text-sm">${u.realName || (u.nickname ? u.nickname : '微信访客')}</span>
+                    ${u.isProfileCompleted 
+                      ? '<span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold">已完善</span>' 
+                      : '<span class="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">待完善资料</span>'}
+                  </div>
+                  <div class="text-[11px] text-slate-400 mt-0.5 font-mono">${u.openid ? (u.openid.length > 20 ? u.openid.substring(0, 18) + '...' : u.openid) : (u.nickname || '微信访客')}</div>
+                </div>
+              </div>
+            </td>
+
+            <!-- 所在班级 -->
+            <td class="py-3 px-4">
+              ${u.className 
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">🏫 ${u.className}</span>`
+                : '<span class="text-slate-400 font-normal">待登记</span>'}
+            </td>
+
+            <!-- 学号 -->
+            <td class="py-3 px-4 font-mono font-medium text-slate-700">
+              ${studentId ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200">🎓 ${studentId}</span>` : '<span class="text-slate-400 font-normal">--</span>'}
+            </td>
+
+            <!-- 电话号码 -->
+            <td class="py-3 px-4 font-mono font-medium text-slate-700">
+              ${rawPhone ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 font-mono">📱 ${rawPhone}</span>` : '<span class="text-amber-600 text-xs">待登记</span>'}
+            </td>
+
+            <!-- 激活码绑定状态 -->
+            <td class="py-3 px-4">
+              ${boundCode 
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 font-mono tracking-wide">🔑 ${boundCode}</span>` 
+                : (isExamUnlocked 
+                  ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">已解锁(免码)</span>'
+                  : '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-normal text-slate-400 bg-slate-50 border border-slate-200">未绑定</span>')}
+            </td>
+
+            <!-- 模考次数 -->
+            <td class="py-3 px-4">
+              <span class="font-bold text-slate-900 font-mono">${u.examCount || 0}</span>
+              <span class="text-slate-400 text-[11px]"> 次</span>
+            </td>
+
+            <!-- 最高分 / 平均分 -->
+            <td class="py-3 px-4 font-mono">
+              ${u.examCount > 0 
+                ? `<span class="text-emerald-600 font-bold text-sm">${u.maxScore}</span> <span class="text-slate-400">/ 均${u.avgScore}</span>`
+                : '<span class="text-slate-400">--</span>'}
+            </td>
+
+            <!-- 平均正确率 -->
+            <td class="py-3 px-4">
+              ${u.examCount > 0 ? `
+                <div class="flex items-center space-x-2">
+                  <div class="w-16 bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div class="bg-indigo-600 h-2 rounded-full" style="width: ${u.avgAccuracy || 0}%"></div>
+                  </div>
+                  <span class="font-mono text-xs font-semibold text-slate-700">${u.avgAccuracy || 0}%</span>
+                </div>
+              ` : '<span class="text-slate-400">--</span>'}
+            </td>
+
+            <!-- 刷题次数 -->
+            <td class="py-3 px-4 font-mono text-slate-600">
+              ${u.practiceCount || 0} 次
+            </td>
+
+            <!-- 活跃与注册时间 -->
+            <td class="py-3 px-4">
+              <div class="font-mono text-slate-700 text-[11px]">${formatDate(u.lastLoginAt)} 活跃</div>
+              <div class="font-mono text-slate-400 text-[10px] mt-0.5">${formatDate(u.createdAt)} 注册</div>
+            </td>
+
+            <!-- 操作 -->
+            <td class="py-3 px-4 text-center">
+              <button onclick="openStudentModal('${u.id}')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded text-xs font-bold transition">
+                查看档案
+              </button>
+            </td>
+          </tr>
+        `
+      }).join('')
+    }
+
+    // 模考成绩全表过滤与渲染
+    function applyExamFilters() {
+      if (!globalData || !globalData.allExams) return
+
+      const q = (document.getElementById('examSearchInput').value || '').trim().toLowerCase()
+      const passedFilter = document.getElementById('examPassedFilter').value
+
+      const filtered = globalData.allExams.filter(e => {
+        const matchQ = !q ||
+          (e.realName && e.realName.toLowerCase().includes(q)) ||
+          (e.className && e.className.toLowerCase().includes(q)) ||
+          (e.phone && String(e.phone).includes(q)) ||
+          (e.bankTitle && e.bankTitle.toLowerCase().includes(q))
+
+        const matchPassed = passedFilter === 'all' ||
+          (passedFilter === 'passed' && e.isPassed) ||
+          (passedFilter === 'failed' && !e.isPassed)
+
+        return matchQ && matchPassed
+      })
+
+      document.getElementById('filteredExamCount').innerText = filtered.length
+
+      const tbody = document.getElementById('examsTableBody')
+      if (!filtered || filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="py-12 text-center text-slate-400">未找到匹配的模考交卷记录</td></tr>'
+        return
+      }
+
+      tbody.innerHTML = filtered.map(e => `
+        <tr class="hover:bg-slate-50/80 transition">
+          <td class="py-3 px-4 font-mono text-slate-500">${formatDate(e.createdAt)}</td>
+          <td class="py-3 px-4 font-bold text-slate-900">${e.realName}</td>
+          <td class="py-3 px-4">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">${e.className || '--'}</span>
+          </td>
+          <td class="py-3 px-4 font-mono text-slate-700">${e.studentId ? `🎓 ${e.studentId}` : '<span class="text-slate-400">--</span>'}</td>
+          <td class="py-3 px-4 font-mono text-slate-700">${e.phone ? `📱 ${e.phone}` : '<span class="text-slate-400">--</span>'}</td>
+          <td class="py-3 px-4 font-medium text-indigo-600">📖 ${e.bankTitle}</td>
+          <td class="py-3 px-4 font-mono">
+            <span class="text-base font-black ${e.isPassed ? 'text-emerald-600' : 'text-rose-600'}">${e.score}</span>
+            <span class="text-slate-400"> / ${e.total}</span>
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center space-x-2">
+              <div class="w-14 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div class="${e.isPassed ? 'bg-emerald-500' : 'bg-rose-500'} h-1.5 rounded-full" style="width: ${e.accuracy}%"></div>
+              </div>
+              <span class="font-mono text-xs font-semibold ${e.isPassed ? 'text-emerald-600' : 'text-rose-600'}">${e.accuracy}%</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 font-mono text-slate-500">${e.duration || '--'}</td>
+          <td class="py-3 px-4 text-center">
+            ${e.isPassed 
+              ? '<span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">✓ 及格</span>'
+              : '<span class="badge bg-rose-50 text-rose-700 border border-rose-200">✕ 不及格</span>'}
+          </td>
+        </tr>
+      `).join('')
+    }
+
+    // 渲染班级统计卡片
+    function renderClassStats(classStats) {
+      const grid = document.getElementById('classCardsGrid')
+      if (!classStats || classStats.length === 0) {
+        grid.innerHTML = '<div class="p-8 text-center text-slate-400 col-span-full">暂无班级数据</div>'
+        return
+      }
+
+      grid.innerHTML = classStats.map(c => `
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4 hover:border-indigo-300 transition">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🏫</span>
+              <h3 class="font-bold text-slate-900 text-sm">${c.className}</h3>
+            </div>
+            <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">${c.studentCount} 人</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-center py-2 bg-slate-50 rounded-lg">
+            <div>
+              <div class="text-[10px] text-slate-400">信息完善率</div>
+              <div class="font-bold text-slate-800 text-xs mt-0.5">${c.completedRate}%</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-slate-400">模考人次</div>
+              <div class="font-bold text-amber-600 text-xs mt-0.5">${c.examCount} 次</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-slate-400">班级平均分</div>
+              <div class="font-bold text-emerald-600 text-xs mt-0.5">${c.avgScore} 分</div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
+            <span>最高分: <strong class="text-emerald-600 font-mono">${c.maxScore}</strong> 分</span>
+            <span>已认证学生: <strong class="text-slate-800 font-mono">${c.completedCount}</strong>/${c.studentCount}</span>
+          </div>
+        </div>
+      `).join('')
+    }
+
+    // 渲染热门题库
+    function renderPopularBanks(banks) {
+      const el = document.getElementById('popularBanksList')
+      if (!banks || banks.length === 0) {
+        el.innerHTML = '<div class="text-xs text-slate-400 text-center py-8">暂无做题数据</div>'
+        return
+      }
+
+      el.innerHTML = banks.map((b, i) => `
+        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+          <div class="flex items-center space-x-3">
+            <span class="w-6 h-6 rounded-full ${i === 0 ? 'bg-amber-500 text-white' : i === 1 ? 'bg-slate-400 text-white' : 'bg-slate-200 text-slate-700'} flex items-center justify-center text-xs font-bold">${i + 1}</span>
+            <span class="text-xs font-semibold text-slate-800">${b.title}</span>
+          </div>
+          <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">${b.count} 次</span>
+        </div>
+      `).join('')
+    }
+
+    // 渲染实时流水
+    function renderLogs(logs) {
+      const el = document.getElementById('logsTableBody')
+      if (!logs || logs.length === 0) {
+        el.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400">暂无事件记录</td></tr>'
+        return
+      }
+
+      el.innerHTML = logs.map(l => `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="py-2.5 px-3 text-slate-500 font-mono text-[11px]">${formatDate(l.createdAt)}</td>
+          <td class="py-2.5 px-3">
+            <div class="flex items-center space-x-2">
+              <div class="surname-avatar w-6 h-6 text-xs">${l.userAvatarChar || '学'}</div>
+              <div>
+                <div class="font-semibold text-slate-900">${l.userDisplayName}</div>
+                ${l.userDisplaySub ? `<div class="text-[10px] text-slate-400">${l.userDisplaySub}</div>` : ''}
+              </div>
+            </div>
+          </td>
+          <td class="py-2.5 px-3">${getEventBadge(l.eventType, l.score, l.total)}</td>
+          <td class="py-2.5 px-3 text-slate-600 text-xs">${l.bankTitle || (l.meta && l.meta.page ? '浏览页面: ' + l.meta.page : (l.meta && l.meta.realName ? '绑定: ' + l.meta.realName : '-'))}</td>
+        </tr>
+      `).join('')
+    }
+
+    // 打开单个学生档案弹窗
+    async function openStudentModal(userId) {
+      const modal = document.getElementById('studentDetailModal')
+      modal.classList.remove('hidden')
+
+      try {
+        const res = await fetch(getApiUrl(`/api/admin/user/${userId}`))
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          const { user, exams } = json.data
+
+          document.getElementById('modalAvatar').innerText = user.avatarText || (user.realName ? user.realName.charAt(0) : '考')
+          document.getElementById('modalRealName').innerText = user.realName || user.nickname || '未命名考生'
+          document.getElementById('modalClass').innerText = `🏫 班级: ${user.className || '未分配'}`
+          document.getElementById('modalStudentId').innerText = `🎓 学号: ${user.studentId || '未登记'}`
+          document.getElementById('modalPhone').innerText = `📱 电话: ${user.phone || '未登记'}`
+          document.getElementById('modalCode').innerText = user.examUnlockCode ? `🔑 激活码: ${user.examUnlockCode}` : (user.isExamUnlocked ? '🔑 激活码: 已解锁(免码)' : '🔑 激活码: 未绑定')
+          document.getElementById('modalProfileTag').innerText = user.isProfileCompleted ? '已完善信息' : '待完善信息'
+
+          document.getElementById('modalExamCount').innerText = user.examCount || 0
+          document.getElementById('modalMaxScore').innerText = user.maxScore || 0
+          document.getElementById('modalAvgScore').innerText = user.avgScore || 0
+          document.getElementById('modalAvgAccuracy').innerText = `${user.avgAccuracy || 0}%`
+
+          document.getElementById('modalOpenid').innerText = user.openid || '--'
+          document.getElementById('modalNickname').innerText = user.nickname || '--'
+          document.getElementById('modalCreatedAt').innerText = formatDate(user.createdAt)
+          document.getElementById('modalLastLogin').innerText = formatDate(user.lastLoginAt)
+          document.getElementById('modalLoginCount').innerText = `${user.loginCount || 1} 次`
+          document.getElementById('modalLastIp').innerText = user.lastIp || '--'
+
+          // 渲染该学生模考列表
+          const examListEl = document.getElementById('modalExamList')
+          if (exams && exams.length > 0) {
+            examListEl.innerHTML = exams.map(e => `
+              <div class="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <div>
+                  <div class="font-bold text-slate-900 text-xs">📖 ${e.bankTitle}</div>
+                  <div class="text-[10px] text-slate-400 font-mono mt-0.5">${formatDate(e.createdAt)} · 耗时: ${e.duration || '--'}</div>
+                </div>
+                <div class="text-right">
+                  <div class="font-black text-sm ${e.accuracy >= 60 ? 'text-emerald-600' : 'text-rose-600'} font-mono">${e.score} <span class="text-[10px] text-slate-400 font-normal">/ ${e.total}分</span></div>
+                  <div class="text-[10px] font-semibold ${e.accuracy >= 60 ? 'text-emerald-600' : 'text-rose-600'}">正确率 ${e.accuracy}%</div>
+                </div>
+              </div>
+            `).join('')
+          } else {
+            examListEl.innerHTML = '<div class="text-slate-400 text-center py-6 bg-slate-50 rounded-lg">该学生暂无模考交卷记录</div>'
+          }
+        }
+      } catch (err) {
+        console.error('加载学生详情失败:', err)
+      }
+    }
+
+    function closeStudentModal() {
+      document.getElementById('studentDetailModal').classList.add('hidden')
+    }
+
+    // ================= 激活码管理交互逻辑 =================
+    let codeSubTab = 'all' // 'all' | 'used' | 'unused'
+
+    function setCodeSubTab(tab) {
+      codeSubTab = tab
+      const btns = ['all', 'used', 'unused']
+      btns.forEach(b => {
+        const el = document.getElementById(`codeSubTab-${b}`)
+        if (!el) return
+        if (b === tab) {
+          el.className = 'px-3 py-1.5 rounded-md font-semibold text-indigo-600 bg-white shadow-xs transition'
+        } else {
+          el.className = 'px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 transition'
+        }
+      })
+      applyCodeFilters()
+    }
+
+    function renderActivationCodes(stats) {
+      if (!stats) return
+      document.getElementById('statTotalCodes').innerText = stats.total ?? 0
+      document.getElementById('statUsedCodes').innerText = stats.usedCount ?? 0
+      document.getElementById('statUnusedCodes').innerText = stats.unusedCount ?? 0
+      document.getElementById('statCodeRate').innerText = `${stats.activationRate ?? 0}% 已兑换`
+
+      document.getElementById('countCodesAll').innerText = stats.total ?? 0
+      document.getElementById('countCodesUsed').innerText = stats.usedCount ?? 0
+      document.getElementById('countCodesUnused').innerText = stats.unusedCount ?? 0
+      const btnUnused = document.getElementById('btnCopyUnusedCount')
+      if (btnUnused) btnUnused.innerText = stats.unusedCount ?? 0
+
+      applyCodeFilters()
+    }
+
+    function applyCodeFilters() {
+      if (!globalData || !globalData.activationStats) return
+      const stats = globalData.activationStats
+      const q = (document.getElementById('codeSearchInput').value || '').trim().toLowerCase()
+
+      let list = []
+      if (codeSubTab === 'used') {
+        list = stats.usedList || []
+      } else if (codeSubTab === 'unused') {
+        list = stats.unusedList || []
+      } else {
+        list = stats.allList || []
+      }
+
+      const filtered = list.filter(item => {
+        if (!q) return true
+        return (item.code && item.code.toLowerCase().includes(q)) ||
+               (item.usedByUserRealName && item.usedByUserRealName.toLowerCase().includes(q)) ||
+               (item.usedByUserClass && item.usedByUserClass.toLowerCase().includes(q)) ||
+               (item.usedByUserPhone && String(item.usedByUserPhone).includes(q)) ||
+               (item.usedByUserOpenid && item.usedByUserOpenid.toLowerCase().includes(q))
+      })
+
+      document.getElementById('filteredCodeCount').innerText = filtered.length
+      renderCodesTable(filtered)
+    }
+
+    function renderCodesTable(codes) {
+      const tbody = document.getElementById('codesTableBody')
+      if (!codes || codes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="py-12 text-center text-slate-400">没有找到匹配的激活码记录</td></tr>'
+        return
+      }
+
+      tbody.innerHTML = codes.map(c => {
+        const isUsed = Boolean(c.isUsed)
+        return `
+          <tr class="hover:bg-slate-50/80 transition">
+            <!-- 激活码 -->
+            <td class="py-3 px-4">
+              <div class="flex items-center space-x-2">
+                <span class="font-mono font-black text-sm text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 select-all tracking-wider">${c.code}</span>
+                <button onclick="copyCode('${c.code}')" class="text-slate-400 hover:text-indigo-600 transition text-xs p-1" title="复制激活码">
+                  📋
+                </button>
+              </div>
+            </td>
+
+            <!-- 使用状态 -->
+            <td class="py-3 px-4">
+              ${isUsed 
+                ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">✅ 已激活使用</span>'
+                : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">⏳ 未使用 · 待发放</span>'}
+            </td>
+
+            <!-- 实时匹配考生 -->
+            <td class="py-3 px-4">
+              ${isUsed && c.usedByUserRealName
+                ? `<div class="flex items-center space-x-2">
+                     <div class="surname-avatar w-6 h-6 text-xs">${c.usedByUserRealName.charAt(0)}</div>
+                     <span class="font-bold text-slate-900">${c.usedByUserRealName}</span>
+                   </div>`
+                : '<span class="text-slate-400 font-normal">-- 暂无 --</span>'}
+            </td>
+
+            <!-- 所在班级 -->
+            <td class="py-3 px-4">
+              ${isUsed && c.usedByUserClass && c.usedByUserClass !== '--'
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">🏫 ${c.usedByUserClass}</span>`
+                : '<span class="text-slate-400 font-normal">--</span>'}
+            </td>
+
+            <!-- 联系电话 -->
+            <td class="py-3 px-4 font-mono font-medium text-slate-700">
+              ${isUsed && c.usedByUserPhone && c.usedByUserPhone !== '--'
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 font-mono">📱 ${c.usedByUserPhone}</span>`
+                : '<span class="text-slate-400 font-normal">--</span>'}
+            </td>
+
+            <!-- 绑定 OpenID -->
+            <td class="py-3 px-4 font-mono text-[11px] text-slate-400">
+              ${isUsed && c.usedByUserOpenid ? (c.usedByUserOpenid.length > 16 ? c.usedByUserOpenid.substring(0, 16) + '...' : c.usedByUserOpenid) : '--'}
+            </td>
+
+            <!-- 激活时间 -->
+            <td class="py-3 px-4 font-mono text-[11px] text-slate-600">
+              ${isUsed && c.usedAt ? `<span class="text-emerald-700 font-medium">${formatDate(c.usedAt)} 核销</span>` : `<span class="text-slate-400">${formatDate(c.createdAt)} 创建</span>`}
+            </td>
+
+            <!-- 操作 -->
+            <td class="py-3 px-4 text-center">
+              ${!isUsed 
+                ? `<div class="flex items-center justify-center space-x-1.5">
+                     <button onclick="copyCode('${c.code}')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition">复制</button>
+                     <button onclick="deleteCode('${c.code}')" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-xs font-medium transition">删除</button>
+                   </div>`
+                : `<span class="text-slate-300 text-xs">已核销归档</span>`}
+            </td>
+          </tr>
+        `
+      }).join('')
+    }
+
+    function openAddCodeModal() {
+      document.getElementById('manualCodeInput').value = ''
+      document.getElementById('addCodeModal').classList.remove('hidden')
+    }
+
+    function closeAddCodeModal() {
+      document.getElementById('addCodeModal').classList.add('hidden')
+    }
+
+    async function submitManualCode() {
+      const raw = document.getElementById('manualCodeInput').value || ''
+      const codes = raw.split(/[,，\s\n\r]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+      if (codes.length === 0) {
+        alert('请输入至少一个激活码')
+        return
+      }
+
+      try {
+        const res = await fetch(getApiUrl('/api/admin/activation-codes'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ codes }),
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          closeAddCodeModal()
+          fetchData()
+        } else {
+          alert(json.message || '添加失败')
+        }
+      } catch (err) {
+        alert('请求异常: ' + err.message)
+      }
+    }
+
+    async function submitBatchGenerate() {
+      const prefix = (document.getElementById('batchPrefixInput').value || 'VIP').trim()
+      const count = parseInt(document.getElementById('batchCountInput').value || '10', 10)
+
+      try {
+        const res = await fetch(getApiUrl('/api/admin/activation-codes'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix, count }),
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          closeAddCodeModal()
+          fetchData()
+        } else {
+          alert(json.message || '生成失败')
+        }
+      } catch (err) {
+        alert('请求异常: ' + err.message)
+      }
+    }
+
+    async function batchGenerateCodes(count = 10) {
+      try {
+        const res = await fetch(getApiUrl('/api/admin/activation-codes'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix: 'VIP', count }),
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          fetchData()
+        } else {
+          alert(json.message || '生成失败')
+        }
+      } catch (err) {
+        alert('请求异常: ' + err.message)
+      }
+    }
+
+    async function deleteCode(code) {
+      if (!confirm(`确定要删除未使用的激活码「${code}」吗？`)) return
+
+      try {
+        const res = await fetch(getApiUrl(`/api/admin/activation-codes/${encodeURIComponent(code)}`), {
+          method: 'DELETE',
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          fetchData()
+        } else {
+          alert(json.message || '删除失败')
+        }
+      } catch (err) {
+        alert('请求异常: ' + err.message)
+      }
+    }
+
+    function copyCode(code) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+          alert(`激活码 ${code} 已复制到剪贴板！`)
+        }).catch(() => {
+          prompt('请手动复制激活码:', code)
+        })
+      } else {
+        prompt('请手动复制激活码:', code)
+      }
+    }
+
+    function copyAllUnusedCodes() {
+      if (!globalData || !globalData.activationStats) {
+        alert('激活码数据加载中，请稍候...')
+        return
+      }
+      const unused = globalData.activationStats.unusedList || []
+      if (unused.length === 0) {
+        alert('暂无未使用的剩余激活码！')
+        return
+      }
+      const text = unused.map(item => item.code).join('\n')
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          alert(`已成功复制全部 ${unused.length} 个剩余激活码到剪贴板！\n格式为一行一个，可直接粘贴发放给学生使用。`)
+        }).catch(() => {
+          prompt(`请按 Ctrl+C 复制以下 ${unused.length} 个剩余激活码:`, text)
+        })
+      } else {
+        prompt(`请按 Ctrl+C 复制以下 ${unused.length} 个剩余激活码:`, text)
+      }
+    }
+
+    // 初始化运行
+    fetchData()
+    autoRefreshTimer = setInterval(fetchData, 5000)
+  </script>
+</body>
+</html>

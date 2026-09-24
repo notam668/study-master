@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyMaster - 上课提醒管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; }
+    .field-label { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; display: block; }
+    .field-input {
+      width: 100%; font-size: 13px; color: #0f172a; background: #f8fafc;
+      border: 1px solid #e2e8f0; border-radius: 10px; padding: 9px 12px; outline: none;
+    }
+    .field-input:focus { background: #fff; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+    .btn { font-size: 13px; font-weight: 700; border-radius: 10px; padding: 9px 16px; transition: all .15s; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .hint { font-size: 11px; color: #94a3b8; margin-top: 5px; line-height: 1.65; }
+    .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; }
+    .switch input { display: none; }
+    .slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 9999px; transition: .2s; cursor: pointer; }
+    .slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: #4f46e5; }
+    .switch input:checked + .slider:before { transform: translateX(18px); }
+    .tab-btn { font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 9px; color: #475569; }
+    .tab-btn.on { background: #eef2ff; color: #4f46e5; }
+    table.grid-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.grid-table th { text-align: left; font-weight: 700; color: #64748b; padding: 8px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+    table.grid-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
+    table.grid-table tr:hover td { background: #fafbff; }
+    .pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 9999px; }
+    code.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; background: #f1f5f9; padding: 1px 5px; border-radius: 5px; }
+    .scroll-y { max-height: 360px; overflow-y: auto; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl shadow-md shadow-indigo-100">⏰</div>
+        <div>
+          <h1 class="text-base font-bold text-slate-900">上课提醒管理</h1>
+          <p class="text-xs text-slate-500 mt-0.5">微信订阅消息 · 课前自动提醒 —— <span class="text-emerald-600 font-semibold">改完即生效，无需重新提交审核</span></p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="apiSourceSelect" onchange="onSwitchSource()" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 font-bold cursor-pointer">
+          <option value="auto">🌐 当前服务</option>
+          <option value="cloud">☁️ 微信云托管线上</option>
+          <option value="local">💻 本地开发 (localhost:3000)</option>
+        </select>
+        <input id="tokenInput" type="password" placeholder="管理口令 ADMIN_TOKEN" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 w-52 outline-none focus:border-indigo-500 focus:bg-white">
+        <button onclick="saveToken()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700">记住口令</button>
+        <button onclick="loadAll()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700">🔄 读取</button>
+        <button id="saveBtn" onclick="saveConfig()" class="btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100">💾 保存配置</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-5 py-5 space-y-5">
+
+    <div id="statusBox" class="hidden text-xs rounded-xl px-4 py-3 font-medium"></div>
+
+    <!-- 概览 -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="card p-4">
+        <div class="text-xs text-slate-500 font-semibold">订阅用户</div>
+        <div id="statTotal" class="text-2xl font-black text-slate-900 mt-1">-</div>
+        <div id="statEnabled" class="text-xs text-slate-400 mt-0.5">其中已开启 -</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-500 font-semibold">今日已发</div>
+        <div id="statToday" class="text-2xl font-black text-slate-900 mt-1">-</div>
+        <div class="text-xs text-slate-400 mt-0.5">累计 <span id="statSentTotal">-</span> 条</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-500 font-semibold">剩余可发次数</div>
+        <div id="statQuota" class="text-2xl font-black text-slate-900 mt-1">-</div>
+        <div class="text-xs text-slate-400 mt-0.5">长期订阅模板无此限制</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-slate-500 font-semibold">定时扫描</div>
+        <div id="statScheduler" class="text-sm font-black text-slate-900 mt-2">-</div>
+        <div id="statScanTime" class="text-xs text-slate-400 mt-0.5">尚未扫描</div>
+      </div>
+    </section>
+
+    <!-- 步骤引导 -->
+    <section class="card p-4" id="guideCard">
+      <div class="flex items-start gap-2">
+        <span class="text-lg">🧭</span>
+        <div class="flex-1">
+          <div class="text-sm font-bold text-slate-900">三步走完就能收到提醒</div>
+          <ol class="text-xs text-slate-600 mt-2 space-y-1 list-decimal list-inside">
+            <li>到 <b>微信公众平台 → 功能 → 订阅消息 → 公共模板库</b>，搜索「上课提醒 / 课程提醒」，选用并添加（教育类目通常可申请<b>长期订阅</b>）。</li>
+            <li>回到本页点 <b>「读取微信模板」</b>，在下拉里选中刚添加的模板 —— 字段映射会自动填好。</li>
+            <li>点 <b>保存配置</b>，然后在真机上打开小程序的课表页 → 点「上课提醒」→ 允许订阅。</li>
+          </ol>
+          <div class="hint">当前小程序：AppID <code class="mono" id="infoAppId">-</code> · 服务端密钥 <span id="infoSecret">-</span> · 接口地址 <code class="mono" id="infoApi">-</code> · 现在时间 <span id="infoNow">-</span>（北京时间）</div>
+        </div>
+        <button onclick="checkHealth()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap">🔑 检测密钥</button>
+      </div>
+    </section>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+      <!-- 模板配置 -->
+      <section class="card p-5 xl:col-span-2 space-y-4">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <h2 class="text-sm font-bold text-slate-900">① 订阅消息模板</h2>
+          <div class="flex items-center gap-2">
+            <button onclick="loadTemplates()" class="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700">📥 读取微信模板</button>
+            <label class="flex items-center gap-2 text-xs font-bold text-slate-600">
+              总开关
+              <span class="switch"><input type="checkbox" id="f_enabled" onchange="onField()"><span class="slider"></span></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="field-label">模板 ID（templateId）</label>
+            <input id="f_templateId" class="field-input" placeholder="点右上「读取微信模板」自动填，也可手动粘贴" oninput="onField()">
+            <div class="hint">留空 = 上课提醒整体不可用（小程序端会提示"管理员尚未配置"）。</div>
+            <div id="tplFieldsHint" class="hint"></div>
+          </div>
+          <div>
+            <label class="field-label">模板类型</label>
+            <select id="f_templateType" class="field-input" onchange="onField()">
+              <option value="long">长期订阅（推荐 · 一次授权长期有效，不扣次数）</option>
+              <option value="once">一次性订阅（每次授权只能发一条，需用户续订）</option>
+            </select>
+            <div class="hint">教育类目一般能拿到长期模板；若后台只有一次性模板，选「一次性」。</div>
+          </div>
+        </div>
+
+        <div id="templateListBox" class="hidden border border-slate-200 rounded-xl p-3 bg-slate-50">
+          <div class="text-xs font-bold text-slate-700 mb-2">微信后台已添加的模板（点击选用）</div>
+          <div id="templateListBody" class="space-y-2 scroll-y"></div>
+        </div>
+
+        <div class="border border-slate-200 rounded-xl p-3 bg-slate-50">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="text-xs font-bold text-slate-700">
+              找不到模板？
+              <span class="font-normal text-slate-400 ml-1">在微信公共模板库里搜一下，看有哪些可用的「上课提醒」模板</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <input id="pubKeyword" class="field-input" style="width:130px" value="上课" placeholder="关键词">
+              <button onclick="searchPub()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap">🔍 搜索公共模板库</button>
+            </div>
+          </div>
+          <div id="pubResult" class="mt-3 text-xs"></div>
+        </div>
+
+        <div>
+          <div class="text-xs font-bold text-slate-700 mb-2">
+            字段映射
+            <span class="font-normal text-slate-400 ml-1">左侧是内容，右侧选对应的模板字段（读模板后会自动填）</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="fieldMapGrid"></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="field-label">默认提前提醒（分钟）</label>
+            <input id="f_aheadMinutes" type="number" min="1" max="1440" class="field-input" oninput="onField()">
+            <div class="hint">用户可在小程序里单独调整；这里是默认值。</div>
+          </div>
+          <div>
+            <label class="field-label">每人每天最多发几条</label>
+            <input id="f_dailyLimitPerUser" type="number" min="0" max="50" class="field-input" oninput="onField()">
+            <div class="hint">防止配置错误刷屏，0 = 不限制。</div>
+          </div>
+          <div>
+            <label class="field-label">点击跳转页面</label>
+            <input id="f_page" class="field-input" placeholder="pages/schedule/schedule" oninput="onField()">
+            <div class="hint">用户点通知后打开的小程序页面路径。</div>
+          </div>
+        </div>
+
+        <div>
+          <label class="field-label">备注文案（模板里"备注"字段的内容）</label>
+          <input id="f_remarkTemplate" class="field-input" oninput="onField()">
+          <div class="hint">可用占位符：<code class="mono">{course}</code> 课程名 · <code class="mono">{location}</code> 地点 · <code class="mono">{time}</code> 上课时间 · <code class="mono">{period}</code> 节次 · <code class="mono">{teacher}</code> 老师 · <code class="mono">{ahead}</code> 提前分钟数。最多 20 字。</div>
+        </div>
+
+        <label class="flex items-center gap-2 text-xs font-bold text-slate-600">
+          <span class="switch"><input type="checkbox" id="f_timeFieldRange" onchange="onField()"><span class="slider"></span></span>
+          时间字段发送完整时段（如 <code class="mono">14:00~15:40</code>）
+        </label>
+        <div class="hint" style="margin-top:-8px">微信「上课提醒」模板的「上课时间」示例就是时段格式。关掉则只发开始时间（如 <code class="mono">14:00</code>）。</div>
+      </section>
+
+      <!-- 作息时间 -->
+      <section class="card p-5 space-y-4">
+        <h2 class="text-sm font-bold text-slate-900">② 校历与作息时间</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="field-label">学期开始日期（第1周周一）</label>
+            <input id="f_termStartDate" class="field-input" placeholder="2026-09-07" oninput="onField()">
+          </div>
+          <div>
+            <label class="field-label">学期总周数</label>
+            <input id="f_maxWeek" type="number" min="1" max="40" class="field-input" oninput="onField()">
+          </div>
+        </div>
+        <div>
+          <label class="field-label">各节次上课时间</label>
+          <div class="space-y-2" id="periodRows"></div>
+          <div class="hint">服务端据此推算每节课的开始时刻。与小程序课表页顶部显示的作息保持一致，否则提醒时间会偏。</div>
+        </div>
+        <div>
+          <label class="field-label">下发环境</label>
+          <select id="f_miniprogramState" class="field-input" onchange="onField()">
+            <option value="formal">正式版（用户手机上装的正式包）</option>
+            <option value="trial">体验版</option>
+            <option value="developer">开发版</option>
+          </select>
+          <div class="hint">开发调试时选「开发版」，否则微信会认为页面路径不存在。</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 扫描与调试 -->
+    <section class="card p-5 space-y-4">
+      <h2 class="text-sm font-bold text-slate-900">③ 扫描与调试</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="runScan(false)" class="btn bg-indigo-600 hover:bg-indigo-700 text-white">▶️ 立即扫描一轮</button>
+        <button onclick="runScan(true)" class="btn bg-amber-50 hover:bg-amber-100 text-amber-700">🧪 预演（只算不发）</button>
+        <input id="testOpenid" class="field-input" style="width:320px" placeholder="给这个 openid 发一条测试消息">
+        <button onclick="sendTest()" class="btn bg-emerald-600 hover:bg-emerald-700 text-white">✉️ 发送测试</button>
+        <button onclick="clearLogs()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-600">🧹 清空日志</button>
+      </div>
+      <div id="scanResult" class="hidden text-xs rounded-xl px-4 py-3 bg-slate-50 border border-slate-200 font-mono whitespace-pre-wrap"></div>
+      <div class="hint">
+        容器内定时扫描默认每 30 秒一轮。若云托管把实例缩容到 0，容器里的定时器不会运行，
+        可在 <b>腾讯云函数/任意 cron 服务</b> 里定时请求：
+        <code class="mono" id="cronUrl">-</code>（把 <code class="mono">你的口令</code> 换成 ADMIN_TOKEN）。云托管控制台把「最小实例数」设为 1 也可。
+      </div>
+    </section>
+
+    <!-- 订阅名单 -->
+    <section class="card p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900">④ 订阅用户名单</h2>
+        <span class="text-xs text-slate-400">共 <span id="subCount">0</span> 人 · 点击行内按钮可单独调整</span>
+      </div>
+      <div class="scroll-y border border-slate-200 rounded-xl overflow-hidden">
+        <table class="grid-table">
+          <thead>
+            <tr>
+              <th>用户</th><th>班级</th><th>状态</th><th>提前</th><th>剩余次数</th><th>已发</th><th>最近授权</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="subTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 日志 -->
+    <section class="card p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900">⑤ 最近下发日志</h2>
+        <span class="text-xs text-slate-400">最多保留 800 条</span>
+      </div>
+      <div class="scroll-y border border-slate-200 rounded-xl overflow-hidden">
+        <table class="grid-table">
+          <thead>
+            <tr><th>时间</th><th>用户</th><th>班级</th><th>课程</th><th>上课时间</th><th>状态</th><th>说明</th></tr>
+          </thead>
+          <tbody id="logTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    /* ============================== 状态 ============================== */
+    let currentApiSource = 'auto'
+    let loaded = null            // 最近一次从后端读到的完整数据
+    let templates = []           // 微信模板列表
+    let dirty = false
+
+    const TOKEN_KEY = 'sm_reminder_token'
+    const SOURCE_KEY = 'sm_reminder_source'
+    const CLOUD_BASE = 'https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com'
+
+    const FIELD_LABELS = {
+      course:   { text: '课程名称', tip: '如「高等数学」' },
+      time:     { text: '上课时间', tip: '格式 HH:mm，必须是 time 类字段' },
+      location: { text: '上课地点', tip: '如「博学楼1J1A406」' },
+      teacher:  { text: '授课老师', tip: '多位老师用、分隔' },
+      remark:   { text: '备注',     tip: '自己配的提醒文案' },
+    }
+
+    /* ============================== 工具 ============================== */
+    function getApiUrl(endpoint) {
+      const src = currentApiSource || 'auto'
+      if (src === 'cloud') return CLOUD_BASE + endpoint
+      if (src === 'local') return 'http://localhost:3000' + endpoint
+      return endpoint
+    }
+
+    function getToken() {
+      return document.getElementById('tokenInput').value.trim()
+    }
+
+    function setStatus(type, msg) {
+      const box = document.getElementById('statusBox')
+      const cls = {
+        ok: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+        err: 'bg-rose-50 text-rose-700 border border-rose-200',
+        info: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+        warn: 'bg-amber-50 text-amber-700 border border-amber-200',
+      }
+      box.className = 'text-xs rounded-xl px-4 py-3 font-medium ' + (cls[type] || cls.info)
+      box.innerHTML = msg
+      box.classList.remove('hidden')
+    }
+
+    function apiFetch(endpoint, options) {
+      const opts = options || {}
+      const headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {})
+      const token = getToken()
+      if (token) headers['x-admin-token'] = token
+      return fetch(getApiUrl(endpoint), Object.assign({}, opts, { headers: headers }))
+    }
+
+    async function apiJson(endpoint, options) {
+      const res = await apiFetch(endpoint, options)
+      let body = null
+      try { body = await res.json() } catch (e) { body = null }
+      if (!res.ok) {
+        throw new Error((body && body.message) || ('请求失败 HTTP ' + res.status))
+      }
+      return body
+    }
+
+    function describeFetchError(err) {
+      const msg = (err && err.message) || String(err)
+      const isNetwork = /failed to fetch|networkerror|load failed|fetch failed/i.test(msg)
+      if (!isNetwork) return msg
+      if (location.protocol === 'file:') {
+        return '<b>本页是双击文件打开的（file://）</b>，浏览器不允许发接口请求。请改用后端地址访问：<code>' +
+          'http://localhost:3000/reminder.html</code> 或云托管域名 + <code>/reminder.html</code>。'
+      }
+      if (currentApiSource === 'local') {
+        return '连不上 <code>http://localhost:3000</code>：<b>本地后端没有启动</b>。在 <code>server</code> 目录执行 <code>node server.js</code> 后重试。'
+      }
+      return '后端接口不可用。本地调试请先启动 <code>node server.js</code>；线上请确认云托管服务在运行。'
+    }
+
+    function esc(s) {
+      return String(s === undefined || s === null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    }
+
+    function shortOpenid(openid) {
+      const s = String(openid || '')
+      if (s.length <= 14) return s
+      return s.slice(0, 7) + '…' + s.slice(-4)
+    }
+
+    function fmtTime(ts) {
+      if (!ts) return '-'
+      const d = new Date(ts)
+      const p = (n) => (n < 10 ? '0' + n : n)
+      return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+    }
+
+    /* ============================== 渲染 ============================== */
+    function renderFieldMap() {
+      const grid = document.getElementById('fieldMapGrid')
+      const cfg = getFormConfig()
+      grid.innerHTML = Object.keys(FIELD_LABELS).map((key) => {
+        const cur = cfg.fields[key] || ''
+        const opts = ['<option value="">（模板无此字段）</option>'].concat(
+          availableCodes().map((c) => '<option value="' + esc(c.code) + '"' + (c.code === cur ? ' selected' : '') + '>' +
+            esc(c.code + ' · ' + c.label) + '</option>')
+        ).join('')
+        return '<div><label class="field-label">' + FIELD_LABELS[key].text +
+          ' <span class="font-normal text-slate-400">' + FIELD_LABELS[key].tip + '</span></label>' +
+          '<select class="field-input" data-field="' + key + '" onchange="onFieldMapChange(this)">' + opts + '</select></div>'
+      }).join('')
+    }
+
+    function availableCodes() {
+      const t = templates.find((x) => x.templateId === document.getElementById('f_templateId').value.trim())
+      if (t && t.fields.length) return t.fields
+      // 没读到模板时，给一份常见默认，允许手工填写
+      return [
+        { code: 'thing1', label: '课程名称' }, { code: 'time2', label: '上课时间' },
+        { code: 'thing3', label: '上课地点' }, { code: 'thing4', label: '老师' },
+        { code: 'thing5', label: '备注' },
+      ]
+    }
+
+    function renderPeriods() {
+      const cfg = getFormConfig()
+      document.getElementById('periodRows').innerHTML = cfg.periods.map((p, i) =>
+        '<div class="flex items-center gap-2">' +
+          '<span class="text-xs font-bold text-slate-500 w-24">第 ' + esc(p.startPeriod) + '-' + esc(p.endPeriod) + ' 节</span>' +
+          '<input class="field-input" style="width:96px" value="' + esc(p.start) + '" data-pstart="' + i + '" oninput="onPeriodChange()" placeholder="08:00">' +
+          '<span class="text-xs text-slate-400">至</span>' +
+          '<input class="field-input" style="width:96px" value="' + esc(p.end) + '" data-pend="' + i + '" oninput="onPeriodChange()" placeholder="09:40">' +
+        '</div>'
+      ).join('')
+    }
+
+    function getFormConfig() {
+      const base = (loaded && loaded.config) || { periods: [], fields: {} }
+      const periods = (base.periods && base.periods.length ? base.periods : []).map((p) => ({ ...p }))
+      const fields = Object.assign({}, base.fields || {})
+      return { periods, fields }
+    }
+
+    let formPeriods = []
+    let formFields = {}
+    let formTemplateFieldCodes = []
+
+    function renderTemplateFieldsHint() {
+      const el = document.getElementById('tplFieldsHint')
+      const codes = formTemplateFieldCodes || []
+      if (!document.getElementById('f_templateId').value.trim()) {
+        el.innerHTML = ''
+        return
+      }
+      if (!codes.length) {
+        el.innerHTML = '<span class="text-amber-600 font-bold">⚠️ 还不知道这个模板声明了哪些字段。</span> ' +
+          '建议点上方「读取微信模板」并「选用」一次，系统就只会下发模板里有的字段 —— 多传一个字段微信会直接报 47003。'
+        return
+      }
+      el.innerHTML = '<span class="text-slate-500">已记录该模板声明的字段：</span>' +
+        codes.map((c) => '<code class="mono">' + esc(c) + '</code>').join(' ')
+    }
+
+    function applyForm(cfg) {
+      formPeriods = (cfg.periods || []).map((p) => ({ ...p }))
+      formFields = Object.assign({}, cfg.fields || {})
+      formTemplateFieldCodes = Array.isArray(cfg.templateFieldCodes) ? cfg.templateFieldCodes.slice() : []
+      document.getElementById('f_enabled').checked = !!cfg.enabled
+      document.getElementById('f_templateId').value = cfg.templateId || ''
+      document.getElementById('f_templateType').value = cfg.templateType || 'long'
+      document.getElementById('f_miniprogramState').value = cfg.miniprogramState || 'formal'
+      document.getElementById('f_aheadMinutes').value = cfg.aheadMinutes
+      document.getElementById('f_dailyLimitPerUser').value = cfg.dailyLimitPerUser
+      document.getElementById('f_page').value = cfg.page || ''
+      document.getElementById('f_termStartDate').value = cfg.termStartDate || ''
+      document.getElementById('f_maxWeek').value = cfg.maxWeek
+      document.getElementById('f_remarkTemplate').value = cfg.remarkTemplate || ''
+      document.getElementById('f_timeFieldRange').checked = cfg.timeFieldRange !== false
+      renderPeriods()
+      renderFieldMap()
+      renderTemplateFieldsHint()
+    }
+
+    function collectForm() {
+      return {
+        enabled: document.getElementById('f_enabled').checked,
+        templateId: document.getElementById('f_templateId').value.trim(),
+        templateType: document.getElementById('f_templateType').value,
+        miniprogramState: document.getElementById('f_miniprogramState').value,
+        aheadMinutes: Number(document.getElementById('f_aheadMinutes').value),
+        dailyLimitPerUser: Number(document.getElementById('f_dailyLimitPerUser').value),
+        page: document.getElementById('f_page').value.trim(),
+        termStartDate: document.getElementById('f_termStartDate').value.trim(),
+        maxWeek: Number(document.getElementById('f_maxWeek').value),
+        remarkTemplate: document.getElementById('f_remarkTemplate').value,
+        timeFieldRange: document.getElementById('f_timeFieldRange').checked,
+        periods: formPeriods.map((p, i) => ({
+          startPeriod: p.startPeriod,
+          endPeriod: p.endPeriod,
+          start: (document.querySelector('[data-pstart="' + i + '"]') || {}).value || p.start,
+          end: (document.querySelector('[data-pend="' + i + '"]') || {}).value || p.end,
+        })),
+        fields: formFields,
+        templateFieldCodes: formTemplateFieldCodes,
+      }
+    }
+
+    function renderStats(data) {
+      const s = data.stats || {}
+      document.getElementById('statTotal').textContent = s.total != null ? s.total : '-'
+      document.getElementById('statEnabled').textContent = '其中已开启 ' + (s.enabled != null ? s.enabled : '-')
+      document.getElementById('statToday').textContent = s.sentToday != null ? s.sentToday : '-'
+      document.getElementById('statSentTotal').textContent = s.sentTotal != null ? s.sentTotal : '-'
+      document.getElementById('statQuota').textContent = s.unlimited ? '∞' : (s.remainingQuota != null ? s.remainingQuota : '-')
+      const r = data.runtime || {}
+      document.getElementById('statScheduler').textContent = r.schedulerRunning ? '运行中 ✅' : '未运行 ⚠️'
+      document.getElementById('statScanTime').textContent = r.lastScan
+        ? '上次 ' + fmtTime(r.lastScan.finishedAt) + ' · 发 ' + r.lastScan.sent + ' 条'
+        : '尚未扫描'
+
+      const c = data.credentials || {}
+      document.getElementById('infoAppId').textContent = c.appId || '-'
+      document.getElementById('infoSecret').textContent = c.hasAppSecret ? '已配置 ✅' : '未配置 ❌'
+      document.getElementById('infoApi').textContent = c.apiBase || '-'
+      document.getElementById('infoNow').textContent = data.nowText || '-'
+      document.getElementById('cronUrl').textContent = location.origin + '/api/reminder/cron?token=你的口令'
+    }
+
+    function renderSubscriptions(data) {
+      const list = data.subscriptions || []
+      document.getElementById('subCount').textContent = list.length
+      const unlimited = data.config && data.config.templateType === 'long'
+      if (!list.length) {
+        document.getElementById('subTableBody').innerHTML =
+          '<tr><td colspan="8" class="text-center text-slate-400 py-8">还没有用户开启上课提醒。让同学在小程序「课表」页点一下「上课提醒」即可。</td></tr>'
+        return
+      }
+      document.getElementById('subTableBody').innerHTML = list.map((r) => {
+        const who = r.realName || r.nickname || shortOpenid(r.openid)
+        const mockTag = r.mockOpenid ? '<span class="pill bg-slate-100 text-slate-500 ml-1">模拟</span>' : ''
+        return '<tr>' +
+          '<td><div class="font-bold text-slate-800">' + esc(who) + mockTag + '</div>' +
+            '<div class="text-slate-400" style="font-size:11px">' + esc(shortOpenid(r.openid)) + '</div></td>' +
+          '<td>' + esc(r.effectiveClassName || '-') + '</td>' +
+          '<td>' + (r.enabled ? '<span class="pill bg-emerald-50 text-emerald-700">已开启</span>' : '<span class="pill bg-slate-100 text-slate-500">已关闭</span>') + '</td>' +
+          '<td>' + (r.aheadMinutes == null ? '默认' : r.aheadMinutes + ' 分') + '</td>' +
+          '<td>' + (unlimited ? '∞' : esc(r.quota || 0)) + '</td>' +
+          '<td>' + esc(r.sentCount || 0) + '</td>' +
+          '<td>' + fmtTime(r.lastGrantAt) + '</td>' +
+          '<td class="whitespace-nowrap">' +
+            '<button class="text-indigo-600 font-bold mr-2" onclick="toggleSub(\'' + esc(r.openid) + '\',' + (!r.enabled) + ')">' + (r.enabled ? '停用' : '启用') + '</button>' +
+            '<button class="text-emerald-600 font-bold mr-2" onclick="bumpQuota(\'' + esc(r.openid) + '\',' + Number(r.quota || 0) + ')">改次数</button>' +
+            '<button class="text-rose-500 font-bold" onclick="deleteSub(\'' + esc(r.openid) + '\')">删除</button>' +
+          '</td>' +
+        '</tr>'
+      }).join('')
+    }
+
+    function renderLogs(data) {
+      const list = data.logs || []
+      if (!list.length) {
+        document.getElementById('logTableBody').innerHTML =
+          '<tr><td colspan="7" class="text-center text-slate-400 py-8">暂无下发记录</td></tr>'
+        return
+      }
+      const badge = {
+        sent: '<span class="pill bg-emerald-50 text-emerald-700">已发送</span>',
+        failed: '<span class="pill bg-rose-50 text-rose-700">失败</span>',
+        skipped: '<span class="pill bg-amber-50 text-amber-700">跳过</span>',
+      }
+      document.getElementById('logTableBody').innerHTML = list.map((l) =>
+        '<tr>' +
+          '<td class="whitespace-nowrap">' + fmtTime(l.createdAt) + '</td>' +
+          '<td>' + esc(shortOpenid(l.openid)) + '</td>' +
+          '<td>' + esc(l.className || '-') + '</td>' +
+          '<td>' + esc(l.courseName || '-') + '</td>' +
+          '<td class="whitespace-nowrap">' + (l.startAt ? fmtTime(l.startAt) : '-') + '</td>' +
+          '<td>' + (badge[l.status] || esc(l.status)) + '</td>' +
+          '<td class="text-slate-500">' + esc(l.reason || '') + (l.errcode ? ' <code class="mono">' + esc(l.errcode) + ' ' + esc(l.errmsg || '') + '</code>' : '') + '</td>' +
+        '</tr>'
+      ).join('')
+    }
+
+    function renderAll(data) {
+      loaded = data
+      applyForm(data.config)
+      renderStats(data)
+      renderSubscriptions(data)
+      renderLogs(data)
+    }
+
+    /* ============================== 事件 ============================== */
+    window.addEventListener('DOMContentLoaded', function () {
+      const savedToken = localStorage.getItem(TOKEN_KEY)
+      if (savedToken) document.getElementById('tokenInput').value = savedToken
+      const savedSource = localStorage.getItem(SOURCE_KEY)
+      if (savedSource) {
+        currentApiSource = savedSource
+        document.getElementById('apiSourceSelect').value = savedSource
+      }
+      if (location.protocol === 'file:') {
+        setStatus('warn',
+          '<b>页面打开方式不对。</b>当前是双击文件打开的（file://），无法发接口请求。<br>' +
+          '请改用 <code>http://localhost:3000/reminder.html</code> 或云托管域名 + <code>/reminder.html</code>。')
+        document.getElementById('saveBtn').disabled = true
+        return
+      }
+      loadAll()
+    })
+
+    function saveToken() {
+      localStorage.setItem(TOKEN_KEY, getToken())
+      setStatus('ok', '口令已保存在本机浏览器，下次打开不用再输')
+    }
+
+    function onSwitchSource() {
+      currentApiSource = document.getElementById('apiSourceSelect').value
+      localStorage.setItem(SOURCE_KEY, currentApiSource)
+      loadAll()
+    }
+
+    function onField() {
+      dirty = true
+      renderTemplateFieldsHint()
+    }
+    function onPeriodChange() { dirty = true }
+    function onFieldMapChange(el) { formFields[el.dataset.field] = el.value; dirty = true }
+
+    async function loadAll() {
+      try {
+        setStatus('info', '正在读取配置…')
+        const body = await apiJson('/api/reminder/admin')
+        renderAll(body.data)
+        dirty = false
+        setStatus('ok', '配置已读取。修改后记得点右上角「保存配置」。')
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    async function saveConfig() {
+      const btn = document.getElementById('saveBtn')
+      btn.disabled = true
+      try {
+        const payload = collectForm()
+        const body = await apiJson('/api/reminder/admin', { method: 'PUT', body: JSON.stringify(payload) })
+        renderAll(body.data)
+        dirty = false
+        setStatus('ok', '<b>保存成功。</b>' + (payload.templateId ? '小程序端下次打开即生效。' : '但模板 ID 为空，提醒不会下发 —— 请先读取或粘贴模板 ID。'))
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    async function loadTemplates() {
+      try {
+        setStatus('info', '正在向微信拉取模板列表…')
+        const body = await apiJson('/api/reminder/admin/templates')
+        templates = (body.data && body.data.templates) || []
+        const box = document.getElementById('templateListBox')
+        box.classList.remove('hidden')
+        if (!templates.length) {
+          document.getElementById('templateListBody').innerHTML =
+            '<div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">' +
+            '微信返回 0 个模板。请先到 <b>公众平台 → 功能 → 订阅消息 → 公共模板库</b> 选用「上课提醒」并添加。</div>'
+          setStatus('warn', '未读取到模板：' + (body.message || ''))
+          return
+        }
+        document.getElementById('templateListBody').innerHTML = templates.map((t, i) =>
+          '<div class="bg-white border border-slate-200 rounded-lg px-3 py-2 flex items-start justify-between gap-3">' +
+            '<div class="flex-1 min-w-0">' +
+              '<div class="text-xs font-bold text-slate-800">' + esc(t.title) +
+                ' <span class="pill bg-indigo-50 text-indigo-600">' + esc(t.typeText) + '</span></div>' +
+              '<div class="text-slate-400 mt-1" style="font-size:11px;white-space:pre-wrap">' + esc(t.content) + '</div>' +
+              '<div class="text-slate-400 mt-1" style="font-size:11px">ID: <code class="mono">' + esc(t.templateId) + '</code></div>' +
+            '</div>' +
+            '<button class="btn bg-indigo-600 hover:bg-indigo-700 text-white whitespace-nowrap" onclick="useTemplate(' + i + ')">选用</button>' +
+          '</div>'
+        ).join('')
+        setStatus('ok', '读取到 ' + templates.length + ' 个模板，点「选用」会自动填好 ID、类型与字段映射。')
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    function useTemplate(index) {
+      const t = templates[index]
+      if (!t) return
+      document.getElementById('f_templateId').value = t.templateId
+      document.getElementById('f_templateType').value = Number(t.type) === 2 ? 'once' : 'long'
+      // 按字段顺序智能匹配：time 类 → 上课时间；含「地点/教室/地址」→ 地点；含「老师/教师」→ 老师；含「课程/科目/名称」→ 课程；其余 → 备注
+      const next = { course: '', time: '', location: '', teacher: '', remark: '' }
+      const others = []
+      t.fields.forEach((f) => {
+        const label = f.label || ''
+        const isTime = /^time/.test(f.code)
+        if (isTime && !next.time) return void (next.time = f.code)
+        if (/地点|教室|地址|位置/.test(label) && !next.location) return void (next.location = f.code)
+        if (/老师|教师|讲师|授课/.test(label) && !next.teacher) return void (next.teacher = f.code)
+        if (/课程|科目|名称|课名/.test(label) && !next.course) return void (next.course = f.code)
+        others.push(f.code)
+      })
+      const slots = ['course', 'location', 'teacher', 'remark']
+      slots.forEach((k) => {
+        if (!next[k] && others.length) next[k] = others.shift()
+      })
+      formFields = next
+      formTemplateFieldCodes = t.fields.map((f) => f.code)
+      renderFieldMap()
+      renderTemplateFieldsHint()
+      dirty = true
+      setStatus('ok', '已填入模板 <b>' + esc(t.title) + '</b>（声明了 ' + t.fields.length + ' 个字段）。请核对下方字段映射，确认无误后点「保存配置」。')
+    }
+
+    async function searchPub() {
+      const kw = (document.getElementById('pubKeyword').value || '上课').trim()
+      const box = document.getElementById('pubResult')
+      box.innerHTML = '<span class="text-slate-500">正在搜索公共模板库…</span>'
+      try {
+        const body = await apiJson('/api/reminder/admin/pub-templates?keyword=' + encodeURIComponent(kw))
+        const d = body.data || {}
+        const rows = []
+        rows.push('<div class="text-slate-500 mb-2">当前小程序类目：' +
+          (d.categories || []).map((c) => '<span class="pill bg-indigo-50 text-indigo-600 mr-1">' + esc(c.name) + '</span>').join('') +
+          '　（共扫到 ' + esc(d.scanned || 0) + ' 个公共模板）</div>')
+        if (!(d.matches || []).length) {
+          rows.push('<div class="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">' + esc(d.note || '没有搜到匹配的模板') + '</div>')
+        }
+        ;(d.matches || []).forEach((t) => {
+          rows.push('<div class="bg-white border border-slate-200 rounded-lg px-3 py-2 mb-2">' +
+            '<div class="font-bold text-slate-800 text-xs">' + esc(t.title) +
+              ' <span class="pill ' + (t.type === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500') + '">' + esc(t.typeText) + '</span></div>' +
+            '<div class="text-slate-400 mt-1" style="font-size:11px">类目：' + esc(t.categoryName) + '　tid：<code class="mono">' + esc(t.tid) + '</code></div>' +
+            '<div class="text-slate-500 mt-1" style="font-size:11px">可用字段：' +
+              ((t.keywords || []).map((k) => '<code class="mono">' + esc(k.name) + '</code>(' + esc(k.rule) + ')').join(' ') || '（未取到）') +
+            '</div>' +
+          '</div>')
+        })
+        rows.push('<div class="text-slate-400" style="font-size:11px">' + esc(d.note || '') + '</div>')
+        box.innerHTML = rows.join('')
+        setStatus('ok', '搜索完成，共找到 ' + ((d.matches || []).length) + ' 个候选模板')
+      } catch (err) {
+        box.innerHTML = ''
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    async function checkHealth() {      try {
+        setStatus('info', '正在校验 AppID / AppSecret…')
+        const body = await apiJson('/api/reminder/admin/health')
+        setStatus(body.data.ok ? 'ok' : 'err', esc(body.message))
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    async function runScan(dryRun) {
+      try {
+        setStatus('info', dryRun ? '正在预演扫描（不会真的发消息）…' : '正在扫描并发送…')
+        const body = await apiJson('/api/reminder/admin/scan', {
+          method: 'POST',
+          body: JSON.stringify({ dryRun: dryRun }),
+        })
+        const d = body.data || {}
+        const lines = [body.message]
+        ;(d.details || []).slice(0, 20).forEach((x) => {
+          lines.push(`  · ${shortOpenid(x.openid)} ${x.className || ''} ${x.courseName || ''} ${x.startAtText || ''} ${x.status} ${x.reason || ''}`)
+        })
+        const box = document.getElementById('scanResult')
+        box.classList.remove('hidden')
+        box.textContent = lines.join('\n')
+        setStatus('ok', body.message)
+        loadAll()
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    async function sendTest() {
+      const openid = document.getElementById('testOpenid').value.trim()
+      if (!openid) return setStatus('warn', '请先在输入框里填一个真实用户的 openid（可在下方订阅名单里复制）。')
+      try {
+        const body = await apiJson('/api/reminder/admin/test', { method: 'POST', body: JSON.stringify({ openid: openid }) })
+        setStatus('ok', esc(body.message))
+        loadAll()
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    async function toggleSub(openid, enabled) {
+      await subAction({ openid: openid, enabled: enabled })
+    }
+
+    async function deleteSub(openid) {
+      if (!confirm('确定删除这个用户的提醒订阅吗？')) return
+      await subAction({ openid: openid, action: 'delete' })
+    }
+
+    async function bumpQuota(openid, current) {
+      const v = prompt('设置该用户剩余的提醒次数（一次性订阅模板才会用到）：', String(current || 0))
+      if (v === null) return
+      await subAction({ openid: openid, quota: Number(v) })
+    }
+
+    async function subAction(payload) {
+      try {
+        const body = await apiJson('/api/reminder/admin/subscription', { method: 'POST', body: JSON.stringify(payload) })
+        renderAll(body.data)
+        setStatus('ok', '已更新')
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+
+    async function clearLogs() {
+      if (!confirm('清空全部下发日志？')) return
+      try {
+        const body = await apiJson('/api/reminder/admin/clear-logs', { method: 'POST', body: JSON.stringify({}) })
+        renderAll(body.data)
+        setStatus('ok', '日志已清空')
+      } catch (err) {
+        setStatus('err', describeFetchError(err))
+      }
+    }
+  </script>
+</body>
+</html>

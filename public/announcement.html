@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyMaster - 开屏公告管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; }
+    .field-label { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; display: block; }
+    .field-input {
+      width: 100%; font-size: 13px; color: #0f172a; background: #f8fafc;
+      border: 1px solid #e2e8f0; border-radius: 10px; padding: 9px 12px; outline: none;
+    }
+    .field-input:focus { background: #fff; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+    .btn { font-size: 13px; font-weight: 700; border-radius: 10px; padding: 9px 16px; transition: all .15s; }
+    /* 手机预览区 */
+    .phone { width: 340px; background: #f8fafc; border-radius: 26px; border: 8px solid #0f172a; overflow: hidden; }
+    .phone-bar { height: 34px; background: #fff; border-bottom: 1px solid #eef2f7; }
+    .phone-body { height: 560px; position: relative; background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 42%); overflow: hidden; }
+    .mask { position: absolute; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .modal-card { width: 100%; background: #fff; border-radius: 18px; overflow: hidden; box-shadow: 0 12px 40px rgba(15,23,42,.28); position: relative; }
+    .modal-x { position: absolute; top: 10px; right: 12px; width: 26px; height: 26px; border-radius: 50%; background: rgba(15,23,42,.06); color: #64748b; font-size: 15px; line-height: 26px; text-align: center; }
+    .mock-tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 46px; background: #fff; border-top: 1px solid #eef2f7; display: flex; }
+    .mock-tabbar div { flex: 1; text-align: center; font-size: 10px; color: #94a3b8; padding-top: 7px; }
+    .mock-tabbar div.on { color: #4f46e5; font-weight: 700; }
+    .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+    .switch input { display: none; }
+    .slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 9999px; transition: .2s; cursor: pointer; }
+    .slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: #4f46e5; }
+    .switch input:checked + .slider:before { transform: translateX(18px); }
+    .hint { font-size: 11px; color: #94a3b8; margin-top: 5px; line-height: 1.6; }
+    .tab-btn { font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 9px; color: #475569; }
+    .tab-btn.on { background: #eef2ff; color: #4f46e5; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+  <!-- 顶部工具栏 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl shadow-md shadow-indigo-100">📢</div>
+        <div>
+          <h1 class="text-base font-bold text-slate-900">开屏公告管理</h1>
+          <p class="text-xs text-slate-500 mt-0.5">改完点保存，用户下次打开小程序即刻看到 —— <span class="text-emerald-600 font-semibold">无需重新提交审核</span></p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="apiSourceSelect" onchange="onSwitchSource()" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 font-bold cursor-pointer">
+          <option value="auto">🌐 当前服务</option>
+          <option value="cloud">☁️ 微信云托管线上</option>
+          <option value="local">💻 本地开发 (localhost:3000)</option>
+        </select>
+        <input id="tokenInput" type="password" placeholder="管理口令 ADMIN_TOKEN" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 w-52 outline-none focus:border-indigo-500 focus:bg-white">
+        <button onclick="saveToken()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700">记住口令</button>
+        <button onclick="loadConfig()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700">🔄 读取</button>
+        <button id="saveBtn" onclick="saveAll()" class="btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">💾 保存并生效</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-5 py-6 grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
+
+    <!-- 左：表单 -->
+    <div class="space-y-5">
+
+      <!-- 状态提示 -->
+      <div id="statusBox" class="hidden text-xs rounded-xl px-4 py-3 font-medium"></div>
+
+      <!-- 1. 开关与弹出策略 -->
+      <section class="card p-5">
+        <h2 class="text-sm font-bold text-slate-900 mb-4">① 开关与弹出策略</h2>
+
+        <div class="flex items-center justify-between py-2.5 border-b border-slate-100">
+          <div>
+            <div class="text-sm font-semibold text-slate-800">启用开屏公告</div>
+            <div class="hint mt-0">关闭后小程序不再弹出任何公告（内容保留，随时可再打开）</div>
+          </div>
+          <label class="switch"><input id="f_enabled" type="checkbox" onchange="onFormChange()"><span class="slider"></span></label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div>
+            <label class="field-label">弹出频率</label>
+            <select id="f_showMode" class="field-input" onchange="onFormChange()">
+              <option value="always">每次打开小程序都弹</option>
+              <option value="oncePerVersion">同一条公告只弹一次</option>
+            </select>
+            <div class="hint">选「只弹一次」后，用户关掉就不再打扰；想再推一次，改下面的公告版本号即可</div>
+          </div>
+          <div>
+            <label class="field-label">公告版本号</label>
+            <input id="f_version" class="field-input" placeholder="2026-09-18" oninput="onFormChange()">
+            <div class="hint">仅在「同一条公告只弹一次」模式下起作用，改个值就等于发布一条新公告</div>
+          </div>
+          <div>
+            <label class="field-label">弹出延迟 (毫秒)</label>
+            <input id="f_delayMs" type="number" min="0" max="5000" class="field-input" oninput="onFormChange()">
+            <div class="hint">页面出现后等多久再弹，建议 300~500，太快会和页面进入动画撞在一起</div>
+          </div>
+          <div>
+            <label class="field-label">点击遮罩空白处</label>
+            <select id="f_maskClosable" class="field-input" onchange="onFormChange()">
+              <option value="false">不能关闭（必须点 × 或底部按钮）</option>
+              <option value="true">可以关闭</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 文案 -->
+      <section class="card p-5">
+        <h2 class="text-sm font-bold text-slate-900 mb-4">② 标题与正文</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="field-label">标题</label>
+            <input id="f_title" class="field-input" maxlength="60" placeholder="最新公告" oninput="onFormChange()">
+          </div>
+          <div>
+            <label class="field-label">正文</label>
+            <textarea id="f_text" rows="4" class="field-input" maxlength="600" placeholder="输入公告内容，按回车可以换行" oninput="onFormChange()"></textarea>
+            <div class="hint"><span id="textLen">0</span>/600 字 · 支持换行</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 配图 -->
+      <section class="card p-5">
+        <h2 class="text-sm font-bold text-slate-900 mb-4">③ 配图</h2>
+
+        <div class="flex gap-2 mb-4 flex-wrap">
+          <button type="button" class="tab-btn" data-imgtab="keep" onclick="setImageTab('keep')">保持当前</button>
+          <button type="button" class="tab-btn" data-imgtab="upload" onclick="setImageTab('upload')">上传新图</button>
+          <button type="button" class="tab-btn" data-imgtab="url" onclick="setImageTab('url')">网络图片地址</button>
+          <button type="button" class="tab-btn" data-imgtab="none" onclick="setImageTab('none')">不显示图片</button>
+        </div>
+
+        <!-- 上传 -->
+        <div id="pane_upload" class="hidden">
+          <label for="fileInput" class="block border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-xl py-7 text-center cursor-pointer transition">
+            <div class="text-2xl mb-1">🖼️</div>
+            <div class="text-sm font-semibold text-slate-700">点击选择图片</div>
+            <div class="hint mt-1">支持 JPG / PNG / WEBP / GIF，会自动压缩到 720px 宽（微信小程序用）</div>
+          </label>
+          <input id="fileInput" type="file" accept="image/*" class="hidden" onchange="onPickFile(event)">
+          <div id="uploadResult" class="hidden mt-3 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"></div>
+        </div>
+
+        <!-- 外链 -->
+        <div id="pane_url" class="hidden">
+          <label class="field-label">图片地址</label>
+          <input id="f_imageUrl" class="field-input" placeholder="https://..." oninput="onFormChange()">
+          <div class="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+            ⚠️ 微信规定：<b>网络图片所在域名必须加入小程序的「downloadFile 合法域名」</b>，否则真机上显示不出来（开发者工具勾选"不校验域名"也无效）。<br>
+            所以更推荐用上面的「上传新图」——图片会走接口通道下发，完全不受域名白名单限制。
+          </div>
+        </div>
+
+        <div id="pane_keep" class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          保持当前配图不变：<span id="curImageText" class="font-mono text-slate-700">-</span>
+        </div>
+        <div id="pane_none" class="hidden text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          弹窗将只显示文字与联系方式，不显示图片。
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div>
+            <label class="field-label">图片缩放方式</label>
+            <select id="f_imageMode" class="field-input" onchange="onFormChange()">
+              <option value="widthFix">宽度撑满，高度自适应（推荐）</option>
+              <option value="aspectFit">完整显示，可能留白</option>
+              <option value="aspectFill">裁切填满</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">点击图片放大查看</label>
+            <select id="f_previewImage" class="field-input" onchange="onFormChange()">
+              <option value="true">开启（长按可识别二维码）</option>
+              <option value="false">关闭</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 联系方式 -->
+      <section class="card p-5">
+        <h2 class="text-sm font-bold text-slate-900 mb-4">④ 底部联系方式</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="field-label">左侧小标题</label>
+            <input id="f_contactLabel" class="field-input" maxlength="30" placeholder="联系微信" oninput="onFormChange()">
+          </div>
+          <div>
+            <label class="field-label">要复制的内容（微信号 / QQ / 手机号）</label>
+            <input id="f_contactValue" class="field-input" maxlength="120" placeholder="chinesehsc / Woxiangxingfu777" oninput="onFormChange()">
+            <div class="hint">用户点「复制」按钮后，进剪贴板的就是这一串</div>
+          </div>
+          <div>
+            <label class="field-label">复制按钮文案</label>
+            <input id="f_copyButtonText" class="field-input" maxlength="30" placeholder="复制微信号" oninput="onFormChange()">
+          </div>
+          <div>
+            <label class="field-label">复制成功提示语</label>
+            <input id="f_copyToast" class="field-input" maxlength="40" placeholder="微信号已复制" oninput="onFormChange()">
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. 底部按钮 -->
+      <section class="card p-5">
+        <h2 class="text-sm font-bold text-slate-900 mb-4">⑤ 底部主按钮</h2>
+        <div>
+          <label class="field-label">按钮文案</label>
+          <input id="f_confirmText" class="field-input" maxlength="30" placeholder="我知道了" oninput="onFormChange()">
+        </div>
+      </section>
+
+      <!-- 接口返回预览 -->
+      <section class="card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold text-slate-900">🔍 小程序实际收到的数据</h2>
+          <button onclick="checkApi()" class="btn bg-slate-100 hover:bg-slate-200 text-slate-700">测试接口</button>
+        </div>
+        <pre id="apiPreview" class="text-[11px] leading-relaxed bg-slate-900 text-emerald-300 rounded-xl p-3 overflow-auto max-h-64">点「测试接口」查看</pre>
+        <div class="hint">这里就是小程序打开时拉到的内容。图片为 upload: 形态时，会以 base64 随接口下发，不会走图片域名校验。</div>
+      </section>
+    </div>
+
+    <!-- 右：手机预览 -->
+    <div class="xl:sticky xl:top-24 flex flex-col items-center gap-3">
+      <div class="text-xs font-bold text-slate-500">实时预览（真机样式）</div>
+      <div class="phone">
+        <div class="phone-bar flex items-center justify-center text-[10px] text-slate-400 font-semibold">StudyMaster</div>
+        <div class="phone-body">
+          <div style="padding:16px;">
+            <div style="height:120px;background:#e2e8f0;border-radius:12px;margin-bottom:12px;"></div>
+            <div style="height:12px;width:60%;background:#e2e8f0;border-radius:6px;"></div>
+          </div>
+          <div id="previewMask" class="mask">
+            <div class="modal-card">
+              <div class="modal-x">✕</div>
+              <div style="padding:22px 14px 16px;">
+                <div id="pv_title" style="font-size:15px;font-weight:800;color:#0f172a;text-align:center;line-height:1.4;">最新公告</div>
+                <div id="pv_text" style="font-size:12.5px;color:#475569;text-align:center;margin-top:8px;line-height:1.7;">公告内容</div>
+              </div>
+              <div id="pv_imgWrap" style="padding:0 14px;">
+                <img id="pv_img" alt="" style="width:100%;display:block;border-radius:10px;">
+              </div>
+              <div id="pv_contact" style="margin:14px;background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="min-width:0;">
+                  <div id="pv_label" style="font-size:10.5px;color:#94a3b8;font-weight:600;">联系微信</div>
+                  <div id="pv_value" style="font-size:13px;color:#0f172a;font-weight:700;margin-top:2px;word-break:break-all;">chinesehsc</div>
+                </div>
+                <div id="pv_copy" style="flex-shrink:0;background:#3b82f6;color:#fff;font-size:11.5px;font-weight:700;border-radius:8px;padding:7px 11px;">复制微信号</div>
+              </div>
+              <div style="padding:0 14px 14px;">
+                <div id="pv_confirm" style="background:#3b82f6;color:#fff;font-size:13.5px;font-weight:700;border-radius:11px;padding:11px;text-align:center;">我知道了</div>
+              </div>
+            </div>
+          </div>
+          <div class="mock-tabbar">
+            <div class="on">刷题</div><div>课表</div><div>校园论坛</div><div>主页</div>
+          </div>
+        </div>
+      </div>
+      <div class="text-[11px] text-slate-400 text-center leading-relaxed">
+        预览仅示意排版与文案<br>实际效果以微信内为准
+      </div>
+    </div>
+  </main>
+
+  <script>
+    /* ============================== 全局状态 ============================== */
+    let currentApiSource = 'auto'
+    let adminData = null          // 后台完整配置
+    let pendingImage = null       // 待上传的图片 { dataUrl, size, name } 或 null
+    let imageTab = 'keep'
+    let uploadedImage = null      // 已上传返回的 'upload:xxx'
+    let saveTimer = null
+
+    const TOKEN_KEY = 'sm_announcement_token'
+    const SOURCE_KEY = 'sm_announcement_source'
+
+    /* ============================== 基础工具 ============================== */
+    function getApiUrl(endpoint) {
+      const src = currentApiSource || 'auto'
+      if (src === 'cloud') return 'https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com' + endpoint
+      if (src === 'local') return 'http://localhost:3000' + endpoint
+      return endpoint
+    }
+
+    function getToken() {
+      return document.getElementById('tokenInput').value.trim()
+    }
+
+    function setStatus(type, msg) {
+      const box = document.getElementById('statusBox')
+      const cls = {
+        ok: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+        err: 'bg-rose-50 text-rose-700 border border-rose-200',
+        info: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+        warn: 'bg-amber-50 text-amber-700 border border-amber-200',
+      }
+      box.className = 'text-xs rounded-xl px-4 py-3 font-medium ' + (cls[type] || cls.info)
+      box.innerHTML = msg
+      box.classList.remove('hidden')
+    }
+
+    function apiFetch(endpoint, options) {
+      const opts = options || {}
+      const headers = Object.assign({ 'content-type': 'application/json' }, opts.headers || {})
+      const token = getToken()
+      if (token) headers['x-admin-token'] = token
+      return fetch(getApiUrl(endpoint), Object.assign({}, opts, { headers: headers }))
+    }
+
+    /**
+     * 把 fetch 抛出的原始错误翻译成「能直接照做」的提示。
+     *
+     * 「Failed to fetch」是浏览器在「请求根本没发出去」时的统一措辞——它不是后端返回的错误，
+     * 所以看不到状态码。具体原因只能靠当前页面协议 + 接口来源来判断。
+     */
+    function describeFetchError(err) {
+      const msg = (err && err.message) || String(err)
+      const isNetwork = /failed to fetch|networkerror|load failed|fetch failed/i.test(msg)
+      if (!isNetwork) return msg
+
+      const lines = []
+      if (location.protocol === 'file:') {
+        lines.push('<b>这个页面是「直接双击 HTML 文件」打开的</b>（地址栏以 file:// 开头），浏览器在这种方式下不允许发接口请求。')
+        lines.push('请改为通过后端地址访问：<code>http://localhost:3000/announcement.html</code>，或你的云托管域名 + <code>/announcement.html</code>。')
+      } else if (currentApiSource === 'local') {
+        lines.push('连不上 <code>http://localhost:3000</code>：<b>本地后端服务没有启动</b>。')
+        lines.push('在 <code>server</code> 目录执行 <code>node server.js</code>，等出现启动日志后刷新本页重试。')
+      } else if (currentApiSource === 'cloud') {
+        lines.push('连不上微信云托管的线上服务（404/超时/容器未运行）。')
+        lines.push('先去云托管控制台确认服务在运行，并<b>重新部署一次</b>带公告接口的版本。')
+      } else {
+        lines.push('<b>后端接口不可用。</b>本页是后端托管的静态页，当前却取不到数据，通常是后端进程已经停掉了。')
+        lines.push('本地调试：在 <code>server</code> 目录执行 <code>node server.js</code>，再访问 <code>http://localhost:3000/announcement.html</code>。')
+        lines.push('线上：确认云托管服务处于运行状态。')
+      }
+      lines.push('另外：如果你刚改过 <code>server</code> 目录下的代码，必须<b>重启服务</b>才会加载新接口。')
+      return lines.join('<br>')
+    }
+
+    /* ============================== 初始化 ============================== */
+    window.addEventListener('DOMContentLoaded', function () {
+      const savedToken = localStorage.getItem(TOKEN_KEY)
+      if (savedToken) document.getElementById('tokenInput').value = savedToken
+
+      const savedSource = localStorage.getItem(SOURCE_KEY)
+      if (savedSource) {
+        currentApiSource = savedSource
+        document.getElementById('apiSourceSelect').value = savedSource
+      }
+
+      setImageTab('keep')
+
+      // 双击 HTML 文件打开时（file://），接口请求一律发不出去，直接给出明确指引，避免用户看到莫名的 “Failed to fetch”
+      if (location.protocol === 'file:') {
+        setStatus('warn',
+          '<b>页面打开方式不对。</b>当前是双击文件打开的（地址栏为 file://），浏览器不允许这种方式发接口请求，保存必然报 “Failed to fetch”。<br>' +
+          '请改用后端地址访问本页面：<code>http://localhost:3000/announcement.html</code>，或你的云托管域名 + <code>/announcement.html</code>。')
+        document.getElementById('saveBtn').disabled = true
+        document.getElementById('saveBtn').classList.add('opacity-60')
+        return
+      }
+
+      loadConfig()
+    })
+
+    function saveToken() {
+      localStorage.setItem(TOKEN_KEY, getToken())
+      setStatus('ok', '口令已保存在本机浏览器，下次打开不用再输')
+    }
+
+    function onSwitchSource() {
+      currentApiSource = document.getElementById('apiSourceSelect').value
+      localStorage.setItem(SOURCE_KEY, currentApiSource)
+      loadConfig()
+    }
+
+    /* ============================== 读取配置 ============================== */
+    async function loadConfig() {
+      setStatus('info', '正在读取当前公告配置...')
+      try {
+        const res = await apiFetch('/api/announcement/admin')
+        const json = await res.json()
+        if (json.code !== 0) throw new Error(json.message || '读取失败')
+        adminData = json.data
+        renderForm(json.data)
+        document.getElementById('curImageText').textContent =
+          json.data.config.image || '(当前无图片)'
+        setStatus('ok', '已读取线上当前配置（修改时间：' + fmtTime(json.data.config.updatedAt) + '）')
+      } catch (err) {
+        setStatus('err', '读取失败：' + describeFetchError(err) +
+          '<br><span class="font-normal">若提示 401，说明管理口令不对，请填写并「记住口令」。</span>')
+      }
+    }
+
+    function fmtTime(ts) {
+      if (!ts) return '从未保存过（当前为默认内容）'
+      const d = new Date(ts)
+      const p = (n) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+    }
+
+    function renderForm(data) {
+      const c = data.config
+      document.getElementById('f_enabled').checked = !!c.enabled
+      document.getElementById('f_showMode').value = c.showMode
+      document.getElementById('f_version').value = c.version
+      document.getElementById('f_delayMs').value = c.delayMs
+      document.getElementById('f_maskClosable').value = String(!!c.maskClosable)
+
+      document.getElementById('f_title').value = c.title
+      document.getElementById('f_text').value = c.text
+      document.getElementById('textLen').textContent = (c.text || '').length
+
+      document.getElementById('f_imageMode').value = c.imageMode
+      document.getElementById('f_previewImage').value = String(!!c.previewImage)
+
+      document.getElementById('f_contactLabel').value = c.contactLabel
+      document.getElementById('f_contactValue').value = c.contactValue
+      document.getElementById('f_copyButtonText').value = c.copyButtonText
+      document.getElementById('f_copyToast').value = c.copyToast
+      document.getElementById('f_confirmText').value = c.confirmText
+
+      // 图片预览：upload 形态用后端给的 imageUrl，其它按原值
+      if (data.isUpload && data.imageUrl) {
+        setPreviewImage(data.imageUrl + '?t=' + Date.now())
+      } else if (c.image && /^https?:\/\//.test(c.image)) {
+        setPreviewImage(c.image)
+      } else if (c.image) {
+        // 包内相对路径，浏览器访问不到，用占位提示
+        setPreviewImage('')
+      } else {
+        setPreviewImage('')
+      }
+
+      updatePreview()
+    }
+
+    /* ============================== 表单读取 ============================== */
+    function collectForm() {
+      const c = {}
+      c.enabled = document.getElementById('f_enabled').checked
+      c.showMode = document.getElementById('f_showMode').value
+      c.version = document.getElementById('f_version').value.trim() || '2026-09-18'
+      c.delayMs = parseInt(document.getElementById('f_delayMs').value, 10) || 0
+      c.maskClosable = document.getElementById('f_maskClosable').value === 'true'
+
+      c.title = document.getElementById('f_title').value
+      c.text = document.getElementById('f_text').value
+
+      c.imageMode = document.getElementById('f_imageMode').value
+      c.previewImage = document.getElementById('f_previewImage').value === 'true'
+
+      c.contactLabel = document.getElementById('f_contactLabel').value
+      c.contactValue = document.getElementById('f_contactValue').value
+      c.copyButtonText = document.getElementById('f_copyButtonText').value
+      c.copyToast = document.getElementById('f_copyToast').value
+      c.confirmText = document.getElementById('f_confirmText').value
+
+      // 图片：只有明确选了某个模式才覆盖，避免误清空
+      if (imageTab === 'none') c.image = ''
+      else if (imageTab === 'url') c.image = document.getElementById('f_imageUrl').value.trim()
+      else if (imageTab === 'upload' && uploadedImage) c.image = uploadedImage
+      else if (imageTab === 'upload' && !uploadedImage) {
+        // 选了上传但还没上传成功：本次不改动图片
+      }
+
+      return c
+    }
+
+    /* ============================== 配图处理 ============================== */
+    function setImageTab(tab) {
+      imageTab = tab
+      document.querySelectorAll('[data-imgtab]').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.imgtab === tab)
+      })
+      ;['keep', 'upload', 'url', 'none'].forEach(function (t) {
+        document.getElementById('pane_' + t).classList.toggle('hidden', t !== tab)
+      })
+      if (tab === 'none') setPreviewImage('')
+    }
+
+    function readFileAsDataURL(file) {
+      return new Promise(function (resolve, reject) {
+        const fr = new FileReader()
+        fr.onload = () => resolve(fr.result)
+        fr.onerror = () => reject(new Error('文件读取失败'))
+        fr.readAsDataURL(file)
+      })
+    }
+
+    function loadImage(src) {
+      return new Promise(function (resolve, reject) {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(new Error('图片解析失败'))
+        img.src = src
+      })
+    }
+
+    /** 浏览器端压缩：微信弹窗显示宽度约 640~720px 足够，控制体积避免每次打开都传大包 */
+    async function compressImage(file) {
+      const raw = await readFileAsDataURL(file)
+      // GIF 压缩会丢掉动画，直接原样提交
+      if (file.type === 'image/gif') {
+        return { dataUrl: raw, size: Math.round((raw.length - raw.indexOf(',')) * 0.75) }
+      }
+      const img = await loadImage(raw)
+      const maxW = 720
+      const scale = Math.min(1, maxW / img.naturalWidth)
+      const w = Math.max(1, Math.round(img.naturalWidth * scale))
+      const h = Math.max(1, Math.round(img.naturalHeight * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      // JPEG 没有透明通道，先铺白底，避免 PNG 透明区域发黑
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+      ctx.drawImage(img, 0, 0, w, h)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
+      return { dataUrl: dataUrl, size: Math.round((dataUrl.length - dataUrl.indexOf(',')) * 0.75), width: w, height: h }
+    }
+
+    async function onPickFile(e) {
+      const file = e.target.files && e.target.files[0]
+      if (!file) return
+      const btn = document.getElementById('saveBtn')
+      try {
+        setStatus('info', '正在压缩图片...')
+        const out = await compressImage(file)
+        pendingImage = { dataUrl: out.dataUrl, size: out.size, name: file.name }
+        setPreviewImage(out.dataUrl)
+
+        const box = document.getElementById('uploadResult')
+        box.classList.remove('hidden')
+        const kb = (out.size / 1024).toFixed(1)
+        box.innerHTML =
+          '✅ 已就绪：' + file.name + ' → 压缩后 <b>' + kb + ' KB</b>' +
+          (out.width ? '（' + out.width + '×' + out.height + '）' : '') +
+          '<br><span class="font-normal text-emerald-600">点右上角「保存并生效」即会上传并启用</span>'
+        setStatus('ok', '图片已压缩完成，等待保存')
+      } catch (err) {
+        setStatus('err', '图片处理失败：' + err.message)
+      }
+      e.target.value = ''
+    }
+
+    function setPreviewImage(src) {
+      const wrap = document.getElementById('pv_imgWrap')
+      const img = document.getElementById('pv_img')
+      if (!src) {
+        wrap.style.display = 'none'
+        img.src = ''
+        return
+      }
+      wrap.style.display = 'block'
+      img.src = src
+    }
+
+    /* ============================== 实时预览 ============================== */
+    function onFormChange() {
+      document.getElementById('textLen').textContent = document.getElementById('f_text').value.length
+      updatePreview()
+    }
+
+    function updatePreview() {
+      const c = collectForm()
+      document.getElementById('pv_title').textContent = c.title || '最新公告'
+      document.getElementById('pv_text').textContent = c.text || ''
+      document.getElementById('pv_text').style.display = c.text ? 'block' : 'none'
+
+      const hasContact = c.contactLabel || c.contactValue
+      document.getElementById('pv_contact').style.display = hasContact ? 'flex' : 'none'
+      document.getElementById('pv_label').textContent = c.contactLabel || ''
+      document.getElementById('pv_value').textContent = c.contactValue || ''
+      document.getElementById('pv_copy').textContent = c.copyButtonText || '复制'
+      document.getElementById('pv_confirm').textContent = c.confirmText || '我知道了'
+
+      const mask = document.getElementById('previewMask')
+      mask.style.display = c.enabled ? 'flex' : 'none'
+    }
+
+    /* ============================== 保存 ============================== */
+    async function saveAll() {
+      const btn = document.getElementById('saveBtn')
+      const oldText = btn.innerHTML
+      try {
+        btn.disabled = true
+        btn.innerHTML = '保存中...'
+        btn.classList.add('opacity-60')
+
+        // 1. 有选中的新图片先上传
+        if (imageTab === 'upload' && pendingImage) {
+          setStatus('info', '正在上传图片...')
+          const up = await apiFetch('/api/announcement/image', {
+            method: 'POST',
+            body: JSON.stringify({ dataUrl: pendingImage.dataUrl, fileName: pendingImage.name }),
+          })
+          const upJson = await up.json()
+          if (upJson.code !== 0) throw new Error(upJson.message || '图片上传失败')
+          uploadedImage = upJson.data.image
+          pendingImage = null
+          setStatus('ok', '图片已上传（' + upJson.data.sizeText + '），正在保存配置...')
+        }
+
+        // 2. 保存配置
+        const body = collectForm()
+        const res = await apiFetch('/api/announcement', { method: 'PUT', body: JSON.stringify(body) })
+        const json = await res.json()
+        if (json.code !== 0) throw new Error(json.message || '保存失败')
+
+        adminData = json.data
+        document.getElementById('curImageText').textContent = json.data.config.image || '(当前无图片)'
+        setImageTab('keep')
+        document.getElementById('uploadResult').classList.add('hidden')
+        if (json.data.isUpload && json.data.imageUrl) setPreviewImage(json.data.imageUrl + '?t=' + Date.now())
+
+        setStatus('ok', '🎉 <b>保存成功，已生效！</b><br>用户下次打开小程序（或重新进入）即可看到最新公告，无需重新提交审核，也不用等版本发布。')
+      } catch (err) {
+        setStatus('err', '保存失败：' + describeFetchError(err))
+      } finally {
+        btn.disabled = false
+        btn.innerHTML = oldText
+        btn.classList.remove('opacity-60')
+      }
+    }
+
+    /* ============================== 接口自测 ============================== */
+    async function checkApi() {
+      const pre = document.getElementById('apiPreview')
+      pre.textContent = '请求中...'
+      try {
+        const res = await fetch(getApiUrl('/api/announcement?withImage=0'))
+        const json = await res.json()
+        const data = json.data || {}
+        const cfg = data.config || {}
+        pre.textContent = JSON.stringify(
+          {
+            小程序会收到: {
+              enabled: cfg.enabled,
+              showMode: cfg.showMode,
+              version: cfg.version,
+              title: cfg.title,
+              text: cfg.text,
+              image: cfg.image,
+              imageVersion: data.imageVersion,
+              contactValue: cfg.contactValue,
+              confirmText: cfg.confirmText,
+            },
+            说明: '这是不带图片的摘要；图片以 base64 在 imageBase64 字段中随接口下发（此处已省略）',
+          },
+          null, 2
+        )
+      } catch (err) {
+        // 输出在 <pre> 里，必须去掉 HTML 标签
+        pre.textContent = '请求失败：' + describeFetchError(err).replace(/<[^>]+>/g, '')
+      }
+    }
+  </script>
+</body>
+</html>
