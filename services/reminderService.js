@@ -131,7 +131,7 @@ const DEFAULT_FIELDS = {
 const DEFAULT_CONFIG = {
   enabled: true,
   templateId: config.wxReminderTemplateId || '',
-  templateType: 'long', // long = 长期订阅（不扣次数） | once = 一次性订阅（每次授权可下发一次）
+  templateType: 'once', // long = 长期订阅（教育政务等专属类目） | once = 一次性订阅（大部分通用类目，每次授权下发一次）
   miniprogramState: 'formal', // formal | trial | developer
   page: 'pages/schedule/schedule',
   aheadMinutes: 30,
@@ -413,18 +413,18 @@ let templateCache = null
 let templateCacheFetchedAt = 0
 
 async function fetchAndCacheTemplates(force = false) {
-  if (!force && templateCache && Date.now() - templateCacheFetchedAt < 10 * 60 * 1000) {
-    return templateCache
+  if (!force && templateCacheFetchedAt > 0 && Date.now() - templateCacheFetchedAt < 15 * 60 * 1000) {
+    return templateCache || []
   }
+  templateCacheFetchedAt = Date.now()
   try {
     const list = await wxApi.getTemplateList()
     if (Array.isArray(list) && list.length > 0) {
       templateCache = list
-      templateCacheFetchedAt = Date.now()
       return list
     }
   } catch (err) {
-    console.warn('[Reminder] 拉取微信模板列表失败，将使用智能兜底映射:', err.message)
+    console.warn('[Reminder] 拉取微信模板列表失败，将使用智能兜底映射并冷却15分钟:', err.message)
   }
   return templateCache || []
 }
@@ -827,11 +827,11 @@ function getRuntimeStatus() {
 /**
  * 返回某个用户在小程序端需要的提醒状态
  */
-function getPublicState(openid, now = Date.now()) {
+function getPublicState(openid, now = Date.now(), customClassName = '') {
   const cfg = getEffectiveConfig()
   const sub = openid ? db.getReminderByOpenid(openid) : null
   const user = openid ? db.getUserByOpenid(openid) : null
-  const className = (sub && sub.className) || (user && user.className) || ''
+  const className = customClassName || (sub && sub.className) || (user && user.className) || ''
 
   let nextLesson = null
   let nextRemindAt = null

@@ -83,7 +83,7 @@ router.get('/', authMiddleware, (req, res) => {
       db.upsertReminder(openid, { className: targetClass })
     }
   }
-  const state = service.getPublicState(openid)
+  const state = service.getPublicState(openid, Date.now(), targetClass)
   if (!state.className && targetClass) {
     state.className = targetClass
   }

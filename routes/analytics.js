@@ -1,7 +1,9 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const config = require('../config')
 const { authMiddleware, optionalAuth } = require('../middleware/auth')
+const { syncFromCloudBase, checkCloudStatus, getLastSyncInfo } = require('../services/cloudSyncService')
 
 /**
  * 上报操作/埋点事件
@@ -286,8 +288,6 @@ router.delete('/activation-codes/:code', (req, res) => {
   return res.json({ code: 0, message: '激活码删除成功' })
 })
 
-const { syncFromCloudBase } = require('../services/cloudSyncService')
-
 /**
  * 手动从线上腾讯云托管同步最新真实数据
  * POST /api/admin/sync-cloud
@@ -295,6 +295,7 @@ const { syncFromCloudBase } = require('../services/cloudSyncService')
 router.post('/sync-cloud', async (req, res) => {
   const result = await syncFromCloudBase()
   if (result.success) {
+    db.flushSync()
     return res.json({
       code: 0,
       message: `成功同步 ${result.userCount} 位线上真实考生与 ${result.examCount} 条成绩记录！`,
@@ -306,6 +307,24 @@ router.post('/sync-cloud', async (req, res) => {
       message: `同步失败: ${result.error}`,
     })
   }
+})
+
+/**
+ * 查询微信云托管线上服务器运行状态与同步信息
+ * GET /api/admin/cloud-status
+ */
+router.get('/cloud-status', async (req, res) => {
+  const status = await checkCloudStatus()
+  const syncInfo = getLastSyncInfo()
+  const stats = db.getStats()
+  return res.json({
+    code: 0,
+    data: {
+      cloud: status,
+      sync: syncInfo,
+      localOverview: stats.overview || {},
+    },
+  })
 })
 
 module.exports = router

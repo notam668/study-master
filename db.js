@@ -582,7 +582,11 @@ const db = {
         avgAccuracy,
         practiceCount: userPractices.length,
       }
-    }).sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0))
+    }).sort((a, b) => {
+      const timeA = a.lastLoginAt || a.createdAt || 0
+      const timeB = b.lastLoginAt || b.createdAt || 0
+      return timeB - timeA
+    })
 
     // 班级统计聚合
     const classGroupMap = {}
@@ -616,8 +620,8 @@ const db = {
       maxScore: c.maxScore,
     })).sort((a, b) => b.studentCount - a.studentCount)
 
-    // 全量模考成绩明细单（最近 200 条）
-    const allExams = examEvents.slice().reverse().slice(0, 200).map(e => {
+    // 全量模考成绩明细单（按交卷时间严格倒序取最近 200 条）
+    const allExams = examEvents.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 200).map(e => {
       const user = userMap.get(e.userId) || (e.openid ? userMap.get(e.openid) : null)
       const total = e.total && e.total > 0 ? e.total : 100
       const score = e.score || 0

@@ -53,7 +53,7 @@ const DEFAULT_ANNOUNCEMENT = {
   previewImage: true,
 
   contactLabel: '联系微信',
-  contactValue: 'chinesehsc / Woxiangxingfu777',
+  contactValue: 'Corwin07 / Woxiangxingfu777',
   copyButtonText: '复制微信号',
   copyToast: '微信号已复制',
 
@@ -355,8 +355,10 @@ function getEffectiveConfig() {
 
   if (!cfg.title) cfg.title = DEFAULT_ANNOUNCEMENT.title
   if (!cfg.confirmText) cfg.confirmText = DEFAULT_ANNOUNCEMENT.confirmText
-  if (!cfg.contactValue || cfg.contactValue === 'chinesehsc') {
+  if (!cfg.contactValue || cfg.contactValue === 'chinesehsc' || cfg.contactValue === 'chinesehsc / Woxiangxingfu777') {
     cfg.contactValue = DEFAULT_ANNOUNCEMENT.contactValue
+  } else if (typeof cfg.contactValue === 'string' && cfg.contactValue.includes('chinesehsc')) {
+    cfg.contactValue = cfg.contactValue.replace(/chinesehsc/g, 'Corwin07')
   }
 
   return cfg

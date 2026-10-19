@@ -88,4 +88,154 @@ router.post('/sync', async (req, res) => {
   }
 })
 
+/**
+ * 拍照/相册课表智能识别与解析导入
+ * POST /api/schedule/ocr-import
+ * Body: { imageBase64: "data:image/jpeg;base64,..." }
+ */
+router.post('/ocr-import', async (req, res) => {
+  const { imageBase64 } = req.body || {}
+  if (!imageBase64 || typeof imageBase64 !== 'string') {
+    return res.status(400).json({
+      code: 400,
+      message: '请提供有效的课表图片数据 (imageBase64)',
+    })
+  }
+
+  const { spawn } = require('child_process')
+  const fs = require('fs')
+  const path = require('path')
+  const os = require('os')
+
+  let tempPath = ''
+  try {
+    const rawData = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+    const buffer = Buffer.from(rawData, 'base64')
+    tempPath = path.join(os.tmpdir(), `ocr_schedule_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`)
+    fs.writeFileSync(tempPath, buffer)
+
+    const candidateScripts = [
+      path.join(__dirname, '..', 'tools', 'parse_schedule_image.py'),
+      path.resolve(__dirname, '..', '..', '刷题小程序（正式版）', 'tools', 'parse_schedule_image.py'),
+      path.join('d:\\刷题小程序（正式版）', 'tools', 'parse_schedule_image.py'),
+    ]
+    const scriptPath = candidateScripts.find(p => fs.existsSync(p))
+
+    if (!scriptPath) {
+      if (tempPath && fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath) } catch (e) {}
+      }
+      return res.json({
+        code: 0,
+        fallback: true,
+        message: '当前服务环境未部署离线 OCR 脚本，推荐直接通过班级搜索一键导入官方完整课表',
+        data: null,
+      })
+    }
+
+    let hasResponded = false
+    const respondOnce = (status, payload) => {
+      if (hasResponded) return
+      hasResponded = true
+      if (tempPath && fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath) } catch (e) {}
+      }
+      return res.status(status).json(payload)
+    }
+
+    const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3')
+    const py = spawn(pythonBin, ['-X', 'utf8', scriptPath, tempPath], {
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    py.stdout.on('data', chunk => {
+      stdout += chunk.toString('utf8')
+    })
+    py.stderr.on('data', chunk => {
+      stderr += chunk.toString('utf8')
+    })
+
+    const timeout = setTimeout(() => {
+      try { py.kill() } catch (e) {}
+      respondOnce(200, {
+        code: 0,
+        fallback: true,
+        message: '课表图片识别解析超时，建议直接通过班级搜索一键导入官方完整课表',
+        data: null,
+      })
+    }, 20000)
+
+    py.on('error', err => {
+      clearTimeout(timeout)
+      console.warn('[Schedule OCR] Python 进程启动失败:', err.message)
+      respondOnce(200, {
+        code: 0,
+        fallback: true,
+        message: '图片识别服务暂未就绪，建议直接通过班级搜索一键导入官方完整课表',
+        data: null,
+      })
+    })
+
+    py.on('close', code => {
+      clearTimeout(timeout)
+      if (hasResponded) return
+
+      if (code !== 0) {
+        console.warn('[Schedule OCR] 脚本退出状态码非0:', code, stderr)
+        return respondOnce(200, {
+          code: 0,
+          fallback: true,
+          message: '未能从图片中解析出排课，建议直接通过班级搜索一键导入官方完整课表',
+          error: stderr || `Exit code ${code}`,
+          data: null,
+        })
+      }
+
+      try {
+        const jsonMatch = stdout.match(/\{[\s\S]*\}/)
+        if (!jsonMatch) {
+          throw new Error('未解析出有效的 JSON 结果')
+        }
+        const parsed = JSON.parse(jsonMatch[0])
+        if (parsed.success === false) {
+          return respondOnce(200, {
+            code: 0,
+            fallback: true,
+            message: parsed.message || '未能识别到排课',
+            data: null,
+          })
+        }
+        return respondOnce(200, {
+          code: 0,
+          message: '识别解析成功',
+          data: parsed,
+        })
+      } catch (err) {
+        console.warn('[Schedule OCR] JSON parse warning:', err.message)
+        return respondOnce(200, {
+          code: 0,
+          fallback: true,
+          message: '未能提取出有效课程结构，建议直接通过班级搜索一键导入官方完整课表',
+          data: null,
+        })
+      }
+    })
+  } catch (err) {
+    if (tempPath && fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath) } catch (e) {}
+    }
+    return res.json({
+      code: 0,
+      fallback: true,
+      message: '图片读取异常，建议直接通过班级搜索一键导入官方完整课表',
+      data: null,
+    })
+  }
+})
+
 module.exports = router
+

@@ -156,6 +156,62 @@
       <!-- ============================================================ -->
       <section id="tab-dashboard" class="tab-content active space-y-6">
         
+        <!-- ☁️ 微信云托管 (CloudBase) 容器状态与自动更新监控面板 -->
+        <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div class="flex items-center space-x-3">
+              <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 text-lg">
+                ☁️
+              </div>
+              <div>
+                <div class="flex items-center space-x-2">
+                  <h3 class="font-bold text-slate-900 text-base">微信云托管 (WeChat CloudBase) 容器服务</h3>
+                  <span id="cloudStatusBadge" class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span id="cloudStatusText">探活正常 (200 OK)</span>
+                  </span>
+                </div>
+                <p class="text-xs text-slate-500 mt-0.5">微信免备案原生安全通道 wx.cloud.callContainer · 7×24h 自动化健康巡检与数据热同步</p>
+              </div>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs text-slate-400 font-mono" id="cloudPingText">探活延迟: 检测中...</span>
+              <a href="https://cloud.weixin.qq.com/" target="_blank" class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+                <span>云托管控制台 ↗</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- 云托管 4 项核心参数卡片 -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
+              <div class="text-[11px] text-slate-400 font-medium">线上正式环境 ID</div>
+              <div class="text-xs font-bold font-mono text-slate-800 mt-1 select-all" id="cloudEnvId">prod-d0g39zvr13ada49af</div>
+              <div class="text-[10px] text-slate-400 mt-0.5">服务名: studymaster</div>
+            </div>
+            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
+              <div class="text-[11px] text-slate-400 font-medium">每日自动更新机制</div>
+              <div class="text-xs font-bold text-emerald-600 mt-1 flex items-center space-x-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span>每30秒增量同步</span>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-0.5" id="cloudLastSyncText">最近同步: 刚刚</div>
+            </div>
+            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
+              <div class="text-[11px] text-slate-400 font-medium">数据持久化安全保障</div>
+              <div class="text-xs font-bold text-indigo-600 mt-1">原子写入 + 每日冷备</div>
+              <div class="text-[10px] text-slate-400 mt-0.5">自动备份至 data/backups</div>
+            </div>
+            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
+              <div class="text-[11px] text-slate-400 font-medium">线上公网直连入口</div>
+              <div class="text-xs font-bold font-mono text-blue-600 mt-1 truncate">
+                <a href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health" target="_blank" class="hover:underline">studymaster-299598...</a>
+              </div>
+              <div class="text-[10px] text-slate-400 mt-0.5">端口: 80 / 3000</div>
+            </div>
+          </div>
+        </div>
+
         <!-- 微信官方平台数据对照卡片 -->
         <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-2xl p-6 text-white shadow-xl shadow-indigo-950/10">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-700/50 pb-4 mb-4">
@@ -539,7 +595,7 @@
             <!-- 联系方式微信号 -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 mb-1">展示联系微信号 (支持多个以斜杠分割，点击一键复制)</label>
-              <input type="text" id="annContact" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="updateAnnouncementPreview()" placeholder="如：chinesehsc / Woxiangxingfu777">
+              <input type="text" id="annContact" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="updateAnnouncementPreview()" placeholder="如：Corwin07 / Woxiangxingfu777">
             </div>
 
             <!-- 弹出频次 -->
@@ -592,7 +648,7 @@
                 <div class="mt-3 p-2 bg-indigo-50/80 rounded-xl border border-indigo-100 flex items-center justify-between text-left">
                   <div class="min-w-0 pr-2">
                     <div class="text-[10px] text-slate-400 font-medium">联系微信</div>
-                    <div id="prevContact" class="text-xs text-indigo-700 font-bold truncate">chinesehsc</div>
+                    <div id="prevContact" class="text-xs text-indigo-700 font-bold truncate">Corwin07</div>
                   </div>
                   <div class="px-2 py-1 bg-indigo-600 text-white text-[10px] font-semibold rounded-lg flex-shrink-0">复制</div>
                 </div>
@@ -784,6 +840,7 @@
 
     // 全量拉取 Dashboard 与用户数据
     async function loadAllData(isSilent = false) {
+      loadCloudStatus()
       try {
         const res = await fetch('/api/admin/dashboard')
         const json = await res.json()
@@ -801,6 +858,44 @@
         }
       } catch (err) {
         if (!isSilent) console.error('拉取大屏数据失败:', err)
+      }
+    }
+
+    // 微信云托管实时探活与状态监控
+    async function loadCloudStatus() {
+      try {
+        const res = await fetch('/api/admin/cloud-status')
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          const { cloud, sync } = json.data
+          const badge = document.getElementById('cloudStatusBadge')
+          const text = document.getElementById('cloudStatusText')
+          const ping = document.getElementById('cloudPingText')
+          const syncText = document.getElementById('cloudLastSyncText')
+
+          if (badge && text && ping) {
+            if (cloud.healthy) {
+              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
+              text.innerText = `探活正常 (${cloud.statusCode || 200} OK)`
+              ping.innerText = `探活延迟: ${cloud.pingMs || 0} ms`
+            } else {
+              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200'
+              text.innerText = '云端连接异常'
+              ping.innerText = `错误: ${cloud.error || '超时'}`
+            }
+          }
+
+          if (syncText && sync && sync.lastSyncAt) {
+            const diffSec = Math.max(0, Math.round((Date.now() - sync.lastSyncAt) / 1000))
+            if (diffSec < 60) {
+              syncText.innerText = `最近同步: ${diffSec}秒前`
+            } else {
+              syncText.innerText = `最近同步: ${Math.round(diffSec / 60)}分钟前`
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('获取微信云托管状态失败:', e)
       }
     }
 
@@ -1106,7 +1201,7 @@
       const enabled = document.getElementById('annEnabled').checked
       const title = document.getElementById('annTitle').value || '最新公告'
       const text = document.getElementById('annText').value || '暂无内容'
-      const contact = document.getElementById('annContact').value || 'chinesehsc'
+      const contact = document.getElementById('annContact').value || 'Corwin07'
       const img = document.getElementById('annImage').value || ''
 
       document.getElementById('prevTitle').innerText = title
