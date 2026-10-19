@@ -167,7 +167,7 @@ router.post('/ocr-import', async (req, res) => {
         message: '课表图片识别解析超时，建议直接通过班级搜索一键导入官方完整课表',
         data: null,
       })
-    }, 20000)
+    }, 60000)
 
     py.on('error', err => {
       clearTimeout(timeout)
