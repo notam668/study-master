@@ -88,6 +88,8 @@ router.post('/sync', async (req, res) => {
   }
 })
 
+const scheduleOcrService = require('../services/scheduleOcrService')
+
 /**
  * 拍照/相册课表智能识别与解析导入
  * POST /api/schedule/ocr-import
@@ -102,6 +104,21 @@ router.post('/ocr-import', async (req, res) => {
     })
   }
 
+  // 1. 优先采用纯 Node.js 的高可用 OCR 识别管道（彻底解决 Vercel 无法运行 Python 的架构缺陷）
+  try {
+    const parsed = await scheduleOcrService.processScheduleOcr(imageBase64)
+    if (parsed && (parsed.success || (parsed.sessions && parsed.sessions.length > 0) || parsed.matchedClass)) {
+      return res.json({
+        code: 0,
+        message: '识别解析成功',
+        data: parsed,
+      })
+    }
+  } catch (cloudErr) {
+    console.warn('[Schedule OCR] 云端智能识别引擎异常，尝试本地备用通道:', cloudErr.message)
+  }
+
+  // 2. 本地备用通道：若处于有 Python 环境的服务器（如本地开发机），调用 parse_schedule_image.py
   const { spawn } = require('child_process')
   const fs = require('fs')
   const path = require('path')
@@ -128,7 +145,7 @@ router.post('/ocr-import', async (req, res) => {
       return res.json({
         code: 0,
         fallback: true,
-        message: '当前服务环境未部署离线 OCR 脚本，推荐直接通过班级搜索一键导入官方完整课表',
+        message: '未能自动解析出清晰排课，推荐直接通过班级搜索一键导入官方完整课表',
         data: null,
       })
     }
@@ -167,15 +184,15 @@ router.post('/ocr-import', async (req, res) => {
         message: '课表图片识别解析超时，建议直接通过班级搜索一键导入官方完整课表',
         data: null,
       })
-    }, 60000)
+    }, 45000)
 
     py.on('error', err => {
       clearTimeout(timeout)
-      console.warn('[Schedule OCR] Python 进程启动失败:', err.message)
+      console.warn('[Schedule OCR] Python 备用通道未启动:', err.message)
       respondOnce(200, {
         code: 0,
         fallback: true,
-        message: '图片识别服务暂未就绪，建议直接通过班级搜索一键导入官方完整课表',
+        message: '图片识别服务暂未返回有效数据，建议直接通过班级搜索一键导入官方完整课表',
         data: null,
       })
     })
@@ -185,7 +202,6 @@ router.post('/ocr-import', async (req, res) => {
       if (hasResponded) return
 
       if (code !== 0) {
-        console.warn('[Schedule OCR] 脚本退出状态码非0:', code, stderr)
         return respondOnce(200, {
           code: 0,
           fallback: true,
@@ -197,25 +213,14 @@ router.post('/ocr-import', async (req, res) => {
 
       try {
         const jsonMatch = stdout.match(/\{[\s\S]*\}/)
-        if (!jsonMatch) {
-          throw new Error('未解析出有效的 JSON 结果')
-        }
+        if (!jsonMatch) throw new Error('未解析出有效 JSON')
         const parsed = JSON.parse(jsonMatch[0])
-        if (parsed.success === false) {
-          return respondOnce(200, {
-            code: 0,
-            fallback: true,
-            message: parsed.message || '未能识别到排课',
-            data: null,
-          })
-        }
         return respondOnce(200, {
           code: 0,
           message: '识别解析成功',
           data: parsed,
         })
       } catch (err) {
-        console.warn('[Schedule OCR] JSON parse warning:', err.message)
         return respondOnce(200, {
           code: 0,
           fallback: true,
@@ -231,7 +236,7 @@ router.post('/ocr-import', async (req, res) => {
     return res.json({
       code: 0,
       fallback: true,
-      message: '图片读取异常，建议直接通过班级搜索一键导入官方完整课表',
+      message: '图片处理异常，建议直接通过班级搜索一键导入官方完整课表',
       data: null,
     })
   }

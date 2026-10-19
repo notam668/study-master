@@ -2,7 +2,10 @@ const fs = require('fs')
 const path = require('path')
 const config = require('../config')
 
-const CACHE_FILE = path.join(config.dataDir, 'timetable_cache.json')
+const defaultCacheFile = path.join(__dirname, '..', 'data', 'timetable_cache.json')
+const CACHE_FILE = fs.existsSync(defaultCacheFile)
+  ? defaultCacheFile
+  : path.join(config.dataDir, 'timetable_cache.json')
 
 let scheduleMemory = null
 
@@ -114,6 +117,29 @@ function matchClassName(inputName) {
   return candidate || null
 }
 
+function flattenSessions(classInfo) {
+  if (!classInfo || !Array.isArray(classInfo.courses)) return []
+  const list = []
+  classInfo.courses.forEach(c => {
+    if (!c.sessions) return
+    c.sessions.forEach(s => {
+      list.push({
+        courseName: c.courseName,
+        location: c.location || '待定',
+        teacher: (c.teachers && c.teachers.join(',')) || '',
+        day: s.day,
+        startPeriod: s.startPeriod,
+        endPeriod: s.endPeriod,
+        startWeek: s.startWeek,
+        endWeek: s.endWeek,
+        parity: s.parity || 'all',
+        rawWeeks: s.rawWeeks || `${s.startWeek}-${s.endWeek}周`,
+      })
+    })
+  })
+  return list
+}
+
 /**
  * 查询指定班级的课表详情
  */
@@ -128,6 +154,7 @@ function getScheduleByClass(className) {
       inputName: className,
       queryKey: null,
       classInfo: null,
+      sessions: [],
     }
   }
 
@@ -143,6 +170,7 @@ function getScheduleByClass(className) {
     termLabel: data.index && data.index.terms ? (data.index.terms.find(t => t.id === defaultTerm) || {}).label : defaultTerm,
     maxWeek: (data.catalogs && data.catalogs[defaultTerm] && data.catalogs[defaultTerm].maxWeek) || 19,
     classInfo: classSchedule || null,
+    sessions: flattenSessions(classSchedule),
   }
 }
 
