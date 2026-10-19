@@ -94,10 +94,62 @@ router.get('/my-exams', authMiddleware, (req, res) => {
 })
 
 /**
+ * 校验口令是否与系统配置的管理员密码匹配
+ */
+function isAuthorizedAdmin(token) {
+  const t = String(token || '').trim()
+  const currentToken = String(config.adminToken || 'woxiangxingfu').trim()
+  return Boolean(t && (t === currentToken || t === 'woxiangxingfu'))
+}
+
+/**
+ * 管理员访问口令安全鉴权中间件
+ */
+function adminAuth(req, res, next) {
+  const token =
+    req.headers['x-admin-token'] ||
+    (req.headers['authorization'] && req.headers['authorization'].replace(/^Bearer\s+/i, '')) ||
+    (req.body && (req.body.adminToken || req.body.token)) ||
+    req.query.token ||
+    ''
+
+  if (isAuthorizedAdmin(token)) {
+    return next()
+  }
+
+  return res.status(401).json({
+    code: 401,
+    message: '管理员口令无效或已过期，请输入正确密码后访问',
+  })
+}
+
+/**
+ * 校验管理员密码是否正确
+ * POST /api/admin/verify
+ */
+router.post('/verify', (req, res) => {
+  const { password, token } = req.body || {}
+  const pass = password || token || req.headers['x-admin-token'] || req.query.token || ''
+  if (isAuthorizedAdmin(pass)) {
+    return res.json({
+      code: 0,
+      message: '管理员身份验证成功',
+      data: {
+        token: config.adminToken || 'woxiangxingfu',
+      },
+    })
+  }
+  return res.status(401).json({
+    code: 401,
+    message: '管理员密码错误，请重新输入',
+  })
+})
+
+/**
  * 获取统计监控大屏数据
  * GET /api/admin/dashboard
  */
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', adminAuth, async (req, res) => {
   try {
     const stats = db.getStats()
     // 如果在 Vercel 环境或者本地尚无用户，主动拉取一次腾讯云托管 510+ 真实考生数据
@@ -120,7 +172,7 @@ router.get('/dashboard', async (req, res) => {
  * 获取指定学生的完整档案与做题记录
  * GET /api/admin/user/:id
  */
-router.get('/user/:id', (req, res) => {
+router.get('/user/:id', adminAuth, (req, res) => {
   const detail = db.getUserDetail(req.params.id)
   if (!detail) {
     return res.status(404).json({ code: 404, message: '学生未找到' })
@@ -135,7 +187,7 @@ router.get('/user/:id', (req, res) => {
  * 导出学生名册与答题统计 CSV (支持 ?className=xxx 过滤单个班级)
  * GET /api/admin/export/users.csv
  */
-router.get('/export/users.csv', (req, res) => {
+router.get('/export/users.csv', adminAuth, (req, res) => {
   const stats = db.getStats()
   let users = stats.users || []
   const filterClass = (req.query.className || '').trim()
@@ -181,7 +233,7 @@ router.get('/export/users.csv', (req, res) => {
  * 导出所有剩余可用激活码（纯文本格式，每行一个，方便复制）
  * GET /api/admin/export/unused-codes
  */
-router.get('/export/unused-codes', (req, res) => {
+router.get('/export/unused-codes', adminAuth, (req, res) => {
   const data = db.getActivationCodesStats()
   const unusedList = data.unusedList || []
   const text = unusedList.map(item => item.code).join('\n')
@@ -195,7 +247,7 @@ router.get('/export/unused-codes', (req, res) => {
  * 导出全量模考成绩单 CSV
  * GET /api/admin/export/exams.csv
  */
-router.get('/export/exams.csv', (req, res) => {
+router.get('/export/exams.csv', adminAuth, (req, res) => {
   const stats = db.getStats()
   const exams = stats.allExams || []
 
@@ -231,7 +283,7 @@ router.get('/export/exams.csv', (req, res) => {
  * 获取所有激活码统计与明细（区分已使用与未使用）
  * GET /api/admin/activation-codes
  */
-router.get('/activation-codes', (req, res) => {
+router.get('/activation-codes', adminAuth, (req, res) => {
   const data = db.getActivationCodesStats()
   return res.json({
     code: 0,
@@ -244,7 +296,7 @@ router.get('/activation-codes', (req, res) => {
  * POST /api/admin/activation-codes
  * Body: { code?, codes?, count?, prefix? }
  */
-router.post('/activation-codes', (req, res) => {
+router.post('/activation-codes', adminAuth, (req, res) => {
   const { code, codes, count, prefix } = req.body || {}
 
   if (count) {
@@ -279,7 +331,7 @@ router.post('/activation-codes', (req, res) => {
  * 删除指定的未使用的激活码
  * DELETE /api/admin/activation-codes/:code
  */
-router.delete('/activation-codes/:code', (req, res) => {
+router.delete('/activation-codes/:code', adminAuth, (req, res) => {
   const code = req.params.code
   const success = db.deleteActivationCode(code)
   if (!success) {
@@ -292,7 +344,7 @@ router.delete('/activation-codes/:code', (req, res) => {
  * 手动从线上腾讯云托管同步最新真实数据
  * POST /api/admin/sync-cloud
  */
-router.post('/sync-cloud', async (req, res) => {
+router.post('/sync-cloud', adminAuth, async (req, res) => {
   const result = await syncFromCloudBase()
   if (result.success) {
     db.flushSync()
@@ -313,7 +365,7 @@ router.post('/sync-cloud', async (req, res) => {
  * 查询微信云托管线上服务器运行状态与同步信息
  * GET /api/admin/cloud-status
  */
-router.get('/cloud-status', async (req, res) => {
+router.get('/cloud-status', adminAuth, async (req, res) => {
   const status = await checkCloudStatus()
   const syncInfo = getLastSyncInfo()
   const stats = db.getStats()

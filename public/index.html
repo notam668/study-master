@@ -96,6 +96,14 @@
           </svg>
           刷新
         </button>
+
+        <!-- 退出登录 / 锁定后台 -->
+        <button onclick="adminLogout()" class="inline-flex items-center px-3 py-1.5 border border-rose-200 text-xs font-medium rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition shadow-sm active:scale-95" title="退出并锁定后台">
+          <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+          </svg>
+          锁定
+        </button>
       </div>
 
     </div>
@@ -476,7 +484,7 @@
 
           <!-- 导出按钮 -->
           <div class="flex items-center space-x-2">
-            <a href="/api/admin/export/users.csv" download class="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm active:scale-95">
+            <a href="#" onclick="exportUsersCsv(event)" class="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm active:scale-95">
               <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
               </svg>
@@ -523,7 +531,7 @@
             <h3 class="font-bold text-slate-900 text-sm">全量上机模拟考试答卷流水</h3>
             <p class="text-xs text-slate-500 mt-0.5">每位考生的交卷得分、答题耗时与及格状态实时记录</p>
           </div>
-          <a href="/api/admin/export/exams.csv" download class="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm">
+          <a href="#" onclick="exportExamsCsv(event)" class="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm active:scale-95">
             <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
             </svg>
@@ -738,7 +746,7 @@
             <button onclick="batchGenerateCodesPrompt()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm">
               + 批量生成激活码
             </button>
-            <a href="/api/admin/export/unused-codes" download class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+            <a href="#" onclick="exportUnusedCodes(event)" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95">
               一键复制/导出未用码
             </a>
           </div>
@@ -786,8 +794,156 @@
     let currentSelectedClass = ''
     let autoPollingTimer = null
 
+    // ── 管理员密码验证与口令缓存 ─────────────────────────────
+    function getAdminToken() {
+      return localStorage.getItem('studymaster_admin_token') || sessionStorage.getItem('studymaster_admin_token') || ''
+    }
+
+    function setAdminToken(token, remember = true) {
+      if (remember) {
+        localStorage.setItem('studymaster_admin_token', token)
+      } else {
+        sessionStorage.setItem('studymaster_admin_token', token)
+      }
+    }
+
+    function clearAdminToken() {
+      localStorage.removeItem('studymaster_admin_token')
+      sessionStorage.removeItem('studymaster_admin_token')
+    }
+
+    function showAuthModal(errMsg = '') {
+      const modal = document.getElementById('adminAuthModal')
+      const errBox = document.getElementById('adminAuthError')
+      if (modal) modal.classList.remove('hidden')
+      if (errBox) {
+        if (errMsg) {
+          errBox.innerText = errMsg
+          errBox.classList.remove('hidden')
+        } else {
+          errBox.classList.add('hidden')
+        }
+      }
+      const input = document.getElementById('adminPasswordInput')
+      if (input) {
+        input.value = ''
+        setTimeout(() => input.focus(), 100)
+      }
+    }
+
+    function hideAuthModal() {
+      const modal = document.getElementById('adminAuthModal')
+      if (modal) modal.classList.add('hidden')
+      const errBox = document.getElementById('adminAuthError')
+      if (errBox) errBox.classList.add('hidden')
+    }
+
+    function togglePasswordVisibility() {
+      const input = document.getElementById('adminPasswordInput')
+      if (input) {
+        input.type = input.type === 'password' ? 'text' : 'password'
+      }
+    }
+
+    async function handleAuthSubmit(e) {
+      if (e) e.preventDefault()
+      const input = document.getElementById('adminPasswordInput')
+      const password = (input ? input.value : '').trim()
+      const remember = document.getElementById('rememberPasswordCheck')?.checked ?? true
+      const btn = document.getElementById('adminAuthSubmitBtn')
+      const errBox = document.getElementById('adminAuthError')
+
+      if (!password) {
+        if (errBox) {
+          errBox.innerText = '请输入管理员密码'
+          errBox.classList.remove('hidden')
+        }
+        return
+      }
+
+      if (btn) {
+        btn.disabled = true
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 验证中...`
+      }
+
+      try {
+        const res = await fetch('/api/admin/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          const token = (json.data && json.data.token) || password
+          setAdminToken(token, remember)
+          hideAuthModal()
+          showToast('管理员身份验证成功！欢迎进入控制台', 'success')
+          startApp()
+        } else {
+          if (errBox) {
+            errBox.innerText = json.message || '密码错误，请重新输入'
+            errBox.classList.remove('hidden')
+          }
+        }
+      } catch (err) {
+        if (errBox) {
+          errBox.innerText = '验证连接异常，请重试: ' + err.message
+          errBox.classList.remove('hidden')
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false
+          btn.innerHTML = '验证并进入控制台'
+        }
+      }
+    }
+
+    function adminLogout() {
+      if (confirm('确定要退出管理员登录并锁定后台吗？')) {
+        clearAdminToken()
+        if (autoPollingTimer) {
+          clearInterval(autoPollingTimer)
+          autoPollingTimer = null
+        }
+        showAuthModal('已安全退出登录，请重新输入密码')
+      }
+    }
+
+    // 封装统一鉴权请求
+    async function adminFetch(url, options = {}) {
+      const token = getAdminToken()
+      options.headers = options.headers || {}
+      if (token) {
+        if (options.headers instanceof Headers) {
+          options.headers.set('x-admin-token', token)
+        } else {
+          options.headers['x-admin-token'] = token
+        }
+      }
+      const res = await fetch(url, options)
+      if (res.status === 401) {
+        clearAdminToken()
+        showAuthModal('登录口令已过期或未授权，请输入管理员密码')
+        throw new Error('未授权')
+      }
+      return res
+    }
+
+    function exportUsersCsv(e) {
+      if (e) e.preventDefault()
+      window.open(`/api/admin/export/users.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
+    }
+    function exportExamsCsv(e) {
+      if (e) e.preventDefault()
+      window.open(`/api/admin/export/exams.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
+    }
+    function exportUnusedCodes(e) {
+      if (e) e.preventDefault()
+      window.open(`/api/admin/export/unused-codes?token=${encodeURIComponent(getAdminToken())}`, '_blank')
+    }
+
     // 页面加载入口
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       // 检查 hash
       const hash = window.location.hash.replace('#', '')
       if (['dashboard', 'classes', 'users', 'exams', 'announcement', 'reminder', 'codes'].includes(hash)) {
@@ -795,13 +951,35 @@
       } else {
         switchTab('dashboard')
       }
-      loadAllData()
 
-      // 前端自动轮询刷新（每 15 秒静默刷新数据，保证页面展示绝对实时）
+      const token = getAdminToken()
+      if (token) {
+        try {
+          const res = await fetch('/api/admin/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          })
+          const json = await res.json()
+          if (json.code === 0) {
+            hideAuthModal()
+            startApp()
+            return
+          }
+        } catch (e) {
+          console.warn('自动验证口令失败:', e)
+        }
+      }
+      showAuthModal()
+    })
+
+    function startApp() {
+      loadAllData()
+      if (autoPollingTimer) clearInterval(autoPollingTimer)
       autoPollingTimer = setInterval(() => {
         loadAllData(true)
       }, 15000)
-    })
+    }
 
     // 切换 Tab
     function switchTab(tabId) {
@@ -842,7 +1020,7 @@
     async function loadAllData(isSilent = false) {
       loadCloudStatus()
       try {
-        const res = await fetch('/api/admin/dashboard')
+        const res = await adminFetch('/api/admin/dashboard')
         const json = await res.json()
         if (json.code === 0 && json.data) {
           globalStats = json.data
@@ -864,7 +1042,7 @@
     // 微信云托管实时探活与状态监控
     async function loadCloudStatus() {
       try {
-        const res = await fetch('/api/admin/cloud-status')
+        const res = await adminFetch('/api/admin/cloud-status')
         const json = await res.json()
         if (json.code === 0 && json.data) {
           const { cloud, sync } = json.data
@@ -1088,7 +1266,7 @@
     // 一键导出当前选中班级学生名单 CSV
     function exportCurrentClassCsv() {
       if (!currentSelectedClass) return
-      const url = `/api/admin/export/users.csv?className=${encodeURIComponent(currentSelectedClass)}`
+      const url = `/api/admin/export/users.csv?className=${encodeURIComponent(currentSelectedClass)}&token=${encodeURIComponent(getAdminToken())}`
       window.open(url, '_blank')
     }
 
@@ -1180,7 +1358,7 @@
     // 公告数据加载与实时预览
     async function loadAnnouncementData() {
       try {
-        const res = await fetch('/api/announcement/admin?token=studymaster_admin_2026')
+        const res = await adminFetch('/api/announcement/admin?token=' + encodeURIComponent(getAdminToken()))
         const json = await res.json()
         if (json.code === 0 && json.data) {
           const cfg = json.data.config || json.data
@@ -1230,7 +1408,7 @@
           showMode: document.getElementById('annShowMode').value,
           image: document.getElementById('annImage').value,
         }
-        const res = await fetch('/api/announcement/admin?token=studymaster_admin_2026', {
+        const res = await adminFetch('/api/announcement/admin?token=' + encodeURIComponent(getAdminToken()), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1252,7 +1430,7 @@
     // 激活码管理
     async function loadCodesData() {
       try {
-        const res = await fetch('/api/admin/activation-codes')
+        const res = await adminFetch('/api/admin/activation-codes')
         const json = await res.json()
         if (json.code === 0 && json.data) {
           const list = json.data.allList || []
@@ -1292,7 +1470,7 @@
       
       const prefix = prompt('请输入激活码前缀 (默认 VIP):', 'VIP') || 'VIP'
       try {
-        const res = await fetch('/api/admin/activation-codes', {
+        const res = await adminFetch('/api/admin/activation-codes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ count, prefix })
@@ -1310,7 +1488,7 @@
     async function deleteCode(code) {
       if (!confirm(`确定要删除激活码 ${code} 吗？`)) return
       try {
-        const res = await fetch(`/api/admin/activation-codes/${encodeURIComponent(code)}`, { method: 'DELETE' })
+        const res = await adminFetch(`/api/admin/activation-codes/${encodeURIComponent(code)}`, { method: 'DELETE' })
         const json = await res.json()
         if (json.code === 0) {
           showToast('激活码已删除', 'success')
@@ -1338,7 +1516,7 @@
       btn.innerText = '正在同步中...'
       showToast('正在从云端拉取 500+ 真实考生档案与成绩...', 'info')
       try {
-        const res = await fetch('/api/admin/sync-cloud', { method: 'POST' })
+        const res = await adminFetch('/api/admin/sync-cloud', { method: 'POST' })
         const json = await res.json()
         if (json.code === 0) {
           showToast(json.message, 'success')
@@ -1381,6 +1559,62 @@
       if (!user) return
       alert(`【考生详情档案】\n真实姓名: ${user.realName || '--'}\n所在班级: ${user.className || '--'}\n电话号码: ${user.phone || '--'}\n学号: ${user.studentId || '--'}\n累计登录: ${user.loginCount || 1} 次\n已考次数: ${user.examCount || 0} 次\n最高得分: ${user.maxScore || 0} 分`)
     }
-  </script>
+  <!-- ============================================================ -->
+  <!-- 管理员访问密码锁屏弹窗 -->
+  <!-- ============================================================ -->
+  <div id="adminAuthModal" class="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 transition-opacity duration-200">
+    <div class="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full p-8 text-center relative overflow-hidden">
+      <div class="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
+        🔒
+      </div>
+      <h2 class="text-xl font-bold text-slate-900 tracking-tight">StudyMaster 运营管理中心</h2>
+      <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">
+        系统已启用访问权限保护，请输入管理员密码访问后台
+      </p>
+
+      <form id="adminAuthForm" onsubmit="handleAuthSubmit(event)" class="mt-6 space-y-4 text-left">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1.5">管理员密码</label>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="adminPasswordInput" 
+              placeholder="请输入管理员密码" 
+              autocomplete="current-password"
+              class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-sans tracking-wider"
+              required 
+            />
+            <button 
+              type="button" 
+              onclick="togglePasswordVisibility()" 
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 text-xs"
+              title="显示/隐藏密码"
+            >
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-xs text-slate-600">
+          <label class="flex items-center space-x-2 cursor-pointer select-none">
+            <input type="checkbox" id="rememberPasswordCheck" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
+            <span>记住此设备登录状态</span>
+          </label>
+        </div>
+
+        <div id="adminAuthError" class="hidden text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium text-center"></div>
+
+        <button 
+          type="submit" 
+          id="adminAuthSubmitBtn" 
+          class="w-full py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-lg shadow-indigo-100 active:scale-95 flex items-center justify-center space-x-2"
+        >
+          <span>验证并进入控制台</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
 </body>
 </html>

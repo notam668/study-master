@@ -12,9 +12,8 @@ module.exports = {
   dataDir: process.env.DATA_DIR || defaultDataDir,
   isVercel,
 
-  // 公告管理后台的写操作口令（改公告内容 / 上传配图时需要）
-  // 生产环境请在 .env 里改成自己的复杂字符串
-  adminToken: process.env.ADMIN_TOKEN || 'studymaster_admin_2026',
+  // 公告与运营后台管理口令（进入后台与敏感操作必须输入）
+  adminToken: process.env.ADMIN_TOKEN || 'woxiangxingfu',
 
   // 上传文件的对外访问前缀，留空则按请求 Host 自动拼接
   publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
