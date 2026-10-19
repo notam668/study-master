@@ -123,7 +123,9 @@ function parseScheduleText(text) {
   // 5. 若成功匹配到全校官方班级库，直接以官方数据为坚实底座，并融合 OCR 个性化选修
   if (matchedClass) {
     const classResult = scheduleService.getScheduleByClass(matchedClass)
-    if (classResult && classResult.classInfo && classResult.classInfo.courses) {
+    if (classResult && Array.isArray(classResult.sessions) && classResult.sessions.length > 0) {
+      finalSessions = classResult.sessions.map(s => ({ ...s }))
+    } else if (classResult && classResult.classInfo && classResult.classInfo.courses) {
       // 展平官方课程
       classResult.classInfo.courses.forEach(c => {
         if (!c.sessions) return

@@ -33,6 +33,7 @@ const initialData = {
   reminders: [],       // 上课提醒订阅 { openid, userId, className, enabled, aheadMinutes, quota, subscribeCount, ... }
   reminderLogs: [],    // 上课提醒下发日志 { id, openid, className, courseName, startAt, remindAt, status, errcode, errmsg, createdAt }
   reminderConfig: null, // 上课提醒全局配置，结构见 services/reminderService.js；null = 用内置默认值
+  userSchedules: {},   // 用户保存的课表日程：key 为 userKey (userId / openid / studentId / phone) -> { scheduleData, updatedAt }
 }
 
 // 提醒日志只保留最近 N 条，避免 data/studymaster.json 无限膨胀
@@ -88,6 +89,9 @@ function loadDb() {
       }
       if (memoryDb.reminderConfig === undefined) {
         memoryDb.reminderConfig = null
+      }
+      if (!memoryDb.userSchedules || typeof memoryDb.userSchedules !== 'object') {
+        memoryDb.userSchedules = {}
       }
       // 数据自动纠偏归正
       let userUpdated = false
@@ -1023,6 +1027,35 @@ const db = {
 
     saveDb()
     return updatedCount
+  },
+
+  /**
+   * 保存特定用户的专属课表数据
+   */
+  saveUserSchedule(userKey, scheduleData) {
+    if (!userKey) return null
+    const d = loadDb()
+    if (!d.userSchedules || typeof d.userSchedules !== 'object') {
+      d.userSchedules = {}
+    }
+    const cleanKey = String(userKey).trim()
+    d.userSchedules[cleanKey] = {
+      scheduleData,
+      updatedAt: Date.now(),
+    }
+    saveDb()
+    return d.userSchedules[cleanKey]
+  },
+
+  /**
+   * 读取特定用户的专属课表数据
+   */
+  getUserSchedule(userKey) {
+    if (!userKey) return null
+    const d = loadDb()
+    if (!d.userSchedules || typeof d.userSchedules !== 'object') return null
+    const cleanKey = String(userKey).trim()
+    return d.userSchedules[cleanKey] || null
   },
 
   flushSync,

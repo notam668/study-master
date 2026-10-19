@@ -48,10 +48,20 @@ async function syncScheduleData() {
   }
 }
 
+let localScheduleData = null
+try {
+  localScheduleData = require('../data/localScheduleData')
+} catch (e) {
+  console.warn('[Schedule] 未直接加载到 localScheduleData.js')
+}
+
 /**
  * 获取所有班级名称列表
  */
 function getAllClassNames() {
+  if (localScheduleData && Array.isArray(localScheduleData.classNames) && localScheduleData.classNames.length > 0) {
+    return localScheduleData.classNames
+  }
   const data = getScheduleData()
   if (!data || !data.catalogs) return []
   const defaultTerm = (data.index && data.index.defaultTermId) || Object.keys(data.catalogs)[0]
@@ -144,9 +154,6 @@ function flattenSessions(classInfo) {
  * 查询指定班级的课表详情
  */
 function getScheduleByClass(className) {
-  const data = getScheduleData()
-  if (!data) return null
-
   const matchedName = matchClassName(className)
   if (!matchedName) {
     return {
@@ -157,6 +164,45 @@ function getScheduleByClass(className) {
       sessions: [],
     }
   }
+
+  // 1. 优先从高压缩率、已打进部署包的 localScheduleData 读取（100% 存在，0 耗时，完美兼容 Vercel 与云托管）
+  if (localScheduleData && localScheduleData.schedules && localScheduleData.schedules[matchedName]) {
+    const rawSessions = localScheduleData.schedules[matchedName] || []
+    const pool = localScheduleData.pool || []
+    const getStr = (v, fallback = '') => {
+      if (typeof v === 'number' && pool[v] !== undefined) return pool[v]
+      if (typeof v === 'string') return v
+      return fallback
+    }
+
+    const sessions = rawSessions.map(arr => ({
+      courseName: getStr(arr[0], '课程'),
+      location: getStr(arr[1], '待定'),
+      teacher: getStr(arr[2], ''),
+      day: arr[3],
+      startPeriod: arr[4],
+      endPeriod: arr[5],
+      startWeek: arr[6],
+      endWeek: arr[7],
+      parity: getStr(arr[8], 'all'),
+      rawWeeks: getStr(arr[9], `${arr[6]}-${arr[7]}周`),
+    }))
+
+    return {
+      matched: true,
+      inputName: className,
+      matchedClassName: matchedName,
+      termId: localScheduleData.termId || '2026-2027-1',
+      termLabel: localScheduleData.termLabel || '2026-2027学年第1学期',
+      maxWeek: localScheduleData.maxWeek || 19,
+      classInfo: { courses: [] },
+      sessions,
+    }
+  }
+
+  // 2. 备用读取原始数据文件
+  const data = getScheduleData()
+  if (!data) return null
 
   const defaultTerm = (data.index && data.index.defaultTermId) || '2026-2027-1'
   const queryKey = `${defaultTerm}_class_${matchedName}`

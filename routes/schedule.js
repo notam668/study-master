@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const db = require('../db')
 const scheduleService = require('../services/scheduleService')
 const { optionalAuth } = require('../middleware/auth')
 
@@ -86,6 +87,81 @@ router.post('/sync', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ code: 500, message: err.message })
   }
+})
+
+/**
+ * 保存用户专属课表
+ * POST /api/schedule/user-schedule
+ * Body: { scheduleData, userKey }
+ */
+router.post('/user-schedule', optionalAuth, (req, res) => {
+  const { scheduleData, userKey } = req.body || {}
+  const targetKey = (req.user && (req.user.studentId || req.user.openid || req.user.phone || req.user.id)) || userKey
+  if (!targetKey) {
+    return res.status(400).json({ code: 400, message: '缺少用户标识，无法保存课表' })
+  }
+  if (!scheduleData || !scheduleData.sessions) {
+    return res.status(400).json({ code: 400, message: '课表数据格式不正确' })
+  }
+
+  const keysToUpdate = new Set()
+  keysToUpdate.add(String(targetKey).trim())
+  if (userKey) keysToUpdate.add(String(userKey).trim())
+  if (req.user) {
+    if (req.user.studentId) keysToUpdate.add(String(req.user.studentId).trim())
+    if (req.user.phone) keysToUpdate.add(String(req.user.phone).trim())
+    if (req.user.openid) keysToUpdate.add(String(req.user.openid).trim())
+    if (req.user.id) keysToUpdate.add(String(req.user.id).trim())
+  }
+  if (scheduleData.studentId) keysToUpdate.add(String(scheduleData.studentId).trim())
+
+  let savedRecord = null
+  for (const k of keysToUpdate) {
+    if (k) {
+      savedRecord = db.saveUserSchedule(k, scheduleData)
+    }
+  }
+
+  return res.json({
+    code: 0,
+    message: '课表已成功保存至云端服务器',
+    data: savedRecord,
+  })
+})
+
+/**
+ * 获取用户专属课表
+ * GET /api/schedule/user-schedule?userKey=xxx
+ */
+router.get('/user-schedule', optionalAuth, (req, res) => {
+  const { userKey } = req.query || {}
+  const keysToCheck = []
+  if (req.user) {
+    if (req.user.studentId) keysToCheck.push(String(req.user.studentId).trim())
+    if (req.user.phone) keysToCheck.push(String(req.user.phone).trim())
+    if (req.user.openid) keysToCheck.push(String(req.user.openid).trim())
+    if (req.user.id) keysToCheck.push(String(req.user.id).trim())
+  }
+  if (userKey) keysToCheck.push(String(userKey).trim())
+
+  for (const k of keysToCheck) {
+    if (!k) continue
+    const record = db.getUserSchedule(k)
+    if (record && record.scheduleData) {
+      return res.json({
+        code: 0,
+        message: '读取成功',
+        data: record.scheduleData,
+        updatedAt: record.updatedAt,
+      })
+    }
+  }
+
+  return res.json({
+    code: 0,
+    message: '暂无云端保存的课表',
+    data: null,
+  })
 })
 
 const scheduleOcrService = require('../services/scheduleOcrService')
