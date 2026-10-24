@@ -152,12 +152,18 @@ async function listRooms(buildingId) {
   return []
 }
 
+const DEFAULT_FINANCE_JSESSIONID = '0B30209733BE88932774F75487A1791C'
+
 /**
  * 4. 通过 finance.ycit.edu.cn 查询指定寝室的实时剩余电量
  */
 async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId }) {
   const reminderCfg = db.getReminderConfig() || {}
-  const activeSession = jsessionId || reminderCfg.financeJsessionId || process.env.YCIT_FINANCE_JSESSIONID || ''
+  const activeSession =
+    jsessionId ||
+    reminderCfg.financeJsessionId ||
+    process.env.YCIT_FINANCE_JSESSIONID ||
+    DEFAULT_FINANCE_JSESSIONID
   if (!activeSession || !campusId || !roomId) {
     return null
   }
@@ -201,10 +207,26 @@ async function computeRealtimeBalance(dormRecord = {}) {
   const campus = dormRecord.campus || '南校区'
   const campusId = Number(dormRecord.campusId) || (campus.includes('南') ? 1 : 2)
   const building = dormRecord.building || '12号楼'
-  const buildingId = Number(dormRecord.buildingId) || 0
+  let buildingId = Number(dormRecord.buildingId) || 0
   const room = String(dormRecord.room || '').trim()
-  const roomId = Number(dormRecord.roomId) || 0
+  let roomId = Number(dormRecord.roomId) || 0
   const now = Date.now()
+
+  // 如果旧记录只有楼栋名和房间名，自动从 finance.ycit.edu.cn 解析对应的 buildingId 与 roomId
+  if (!roomId && building && room) {
+    try {
+      const bList = await listBuildings(campusId)
+      const matchedB = bList.find((b) => b.buildingName === building || b.buildingName.includes(building.replace(/号楼|栋/g, '')))
+      if (matchedB) {
+        buildingId = matchedB.buildingId
+        const rList = await listRooms(buildingId)
+        const matchedR = rList.find((r) => r.roomName.toLowerCase() === room.toLowerCase())
+        if (matchedR) {
+          roomId = matchedR.roomId
+        }
+      }
+    } catch {}
+  }
 
   let liveBalance = null
   let syncSource = 'calibrated'
@@ -241,6 +263,7 @@ async function computeRealtimeBalance(dormRecord = {}) {
 
   const hasValidBalance = typeof liveBalance === 'number' && !isNaN(liveBalance)
   const currentBalance = hasValidBalance ? liveBalance : null
+  const balanceText = hasValidBalance ? liveBalance.toFixed(2) : '--'
   const isLow = hasValidBalance && currentBalance < OFFICIAL_ELEC_APP.alertThreshold
 
   const fullAccountName = `${campus}${building}${room}`
@@ -255,6 +278,7 @@ async function computeRealtimeBalance(dormRecord = {}) {
     fullAccountName,
     meterId: dormRecord.meterId || (roomId ? `ISIMS-${campusId}-${roomId}` : fullAccountName),
     balance: currentBalance,
+    balanceText,
     hasValidBalance,
     syncSource,
     unit: '度',

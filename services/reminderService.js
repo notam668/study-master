@@ -132,7 +132,7 @@ const DEFAULT_CONFIG = {
   enabled: true,
   templateId: config.wxReminderTemplateId || '',
   electricityTemplateId: config.wxElectricityTemplateId || '',
-  financeJsessionId: process.env.YCIT_FINANCE_JSESSIONID || '',
+  financeJsessionId: process.env.YCIT_FINANCE_JSESSIONID || '0B30209733BE88932774F75487A1791C',
   templateType: 'once', // long = 长期订阅（教育政务等专属类目） | once = 一次性订阅（大部分通用类目，每次授权下发一次）
   miniprogramState: 'formal', // formal | trial | developer
   page: 'pages/schedule/schedule',
