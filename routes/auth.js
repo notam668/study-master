@@ -106,38 +106,67 @@ router.post('/login', async (req, res) => {
 })
 
 /**
- * 提交/更新学生信息（姓名、班级、学号、电话号码、头像）
+ * 提交/更新学生信息（问答式采集：年级、学号、学院、班级、姓名、电话号码、排行榜显示偏好）
  * POST /api/auth/profile
- * Body: { realName, className, phone?, studentId?, nickname?, avatarUrl? }
+ * Body: { realName, className, phone?, studentId?, nickname?, avatarUrl?, grade?, college?, major?, campus?, rankDisplayMode? }
  */
 router.post('/profile', authMiddleware, (req, res) => {
-  const { realName, className, phone, studentId, nickname, avatarUrl } = req.body || {}
+  const {
+    realName,
+    className,
+    phone,
+    studentId,
+    nickname,
+    avatarUrl,
+    grade,
+    college,
+    major,
+    campus,
+    rankDisplayMode,
+  } = req.body || {}
 
   const cleanPhone = phone ? String(phone).trim() : ''
   const cleanStudentId = studentId ? String(studentId).trim() : ''
+  const cleanRealName = realName ? String(realName).trim() : ''
+  const cleanClassName = className ? String(className).trim() : ''
 
-  if (!realName || !className || !cleanPhone) {
+  if (!cleanRealName || !cleanClassName || !cleanPhone) {
     return res.status(400).json({
       code: 400,
       message: '请完整填写姓名、所在班级与电话号码',
     })
   }
 
-  const phoneRegex = /^1[3-9]\d{9}$/
-  if (!phoneRegex.test(cleanPhone)) {
+  const validation = db.validateProfileInput({
+    realName: cleanRealName,
+    phone: cleanPhone,
+    studentId: cleanStudentId,
+    className: cleanClassName,
+    grade: grade || '',
+  })
+  if (!validation.valid) {
     return res.status(400).json({
       code: 400,
-      message: '请输入正确的11位电话号码 (如: 177XXXXXXXX)',
+      message: validation.message,
     })
   }
 
+  // 若学号匹配 2026 新生库，自动补全学院/专业/校区并标记已认证
+  const matchedFreshman = cleanStudentId ? db.lookupFreshman(cleanStudentId) : null
+
   const user = db.updateUserProfile(req.user.id, {
-    realName,
-    className,
+    realName: cleanRealName,
+    className: cleanClassName,
     phone: cleanPhone,
     studentId: cleanStudentId,
     nickname,
     avatarUrl,
+    grade: grade || (matchedFreshman ? '2026级' : ''),
+    college: college || (matchedFreshman ? matchedFreshman.college : ''),
+    major: major || (matchedFreshman ? matchedFreshman.major : ''),
+    campus: campus || (matchedFreshman ? matchedFreshman.campus : ''),
+    rankDisplayMode: rankDisplayMode === 'realName' ? 'realName' : 'nickname',
+    isFreshmanVerified: Boolean(matchedFreshman),
   })
 
   if (!user) {
@@ -154,6 +183,9 @@ router.post('/profile', authMiddleware, (req, res) => {
       className: user.className,
       studentId: user.studentId,
       phone: user.phone,
+      grade: user.grade,
+      college: user.college,
+      rankDisplayMode: user.rankDisplayMode,
     },
   })
 
@@ -175,12 +207,89 @@ router.post('/profile', authMiddleware, (req, res) => {
       className: user.className,
       studentId: user.studentId,
       phone: user.phone,
+      grade: user.grade || '',
+      college: user.college || '',
+      major: user.major || '',
+      campus: user.campus || '',
+      rankDisplayMode: user.rankDisplayMode || 'nickname',
+      isFreshmanVerified: Boolean(user.isFreshmanVerified),
       avatarText: user.avatarText,
       isProfileCompleted: user.isProfileCompleted,
       isExamUnlocked: Boolean(user.isExamUnlocked),
       nickname: user.nickname,
       avatarUrl: user.avatarUrl,
     },
+  })
+})
+
+/**
+ * 2026级大一新生学号一键核验查询
+ * GET /api/auth/freshman-lookup?studentId=260101011001
+ */
+router.get('/freshman-lookup', optionalAuth, (req, res) => {
+  const sid = String((req.query && req.query.studentId) || '').trim()
+  if (!sid || sid.length < 8) {
+    return res.status(400).json({ code: 400, message: '请输入正确的学号' })
+  }
+  const found = db.lookupFreshman(sid)
+  if (!found) {
+    return res.json({
+      code: 0,
+      data: {
+        found: false,
+        message: '未在2026级新生名单中找到该学号，请核对学号或切换对应年级手动填写',
+      },
+    })
+  }
+  return res.json({
+    code: 0,
+    data: {
+      found: true,
+      student: found,
+    },
+  })
+})
+
+/**
+ * 获取盐城工学院 17 个官方学院及下属班级元数据
+ * GET /api/auth/colleges
+ */
+router.get('/colleges', (req, res) => {
+  return res.json({
+    code: 0,
+    data: {
+      colleges: db.getCollegesMeta(),
+    },
+  })
+})
+
+/**
+ * 跨端 APP 标准账号登录接口（为后续独立手机 APP 预留，支持学号/手机号登录）
+ * POST /api/auth/app-login
+ */
+router.post('/app-login', (req, res) => {
+  const { account, studentId, phone } = req.body || {}
+  const key = String(account || studentId || phone || '').trim()
+  if (!key) {
+    return res.status(400).json({ code: 400, message: '请输入学号或手机号' })
+  }
+  const allUsers = db.getAllUsers()
+  let user = allUsers.find(u => u.studentId === key || u.phone === key)
+  if (!user) {
+    const freshman = db.lookupFreshman(key)
+    const created = db.createOrUpdateUser(`app_${key}`, {
+      studentId: freshman ? freshman.studentId : (/^\d{10,14}$/.test(key) ? key : ''),
+      phone: /^1[3-9]\d{9}$/.test(key) ? key : '',
+      realName: freshman ? freshman.realName : '',
+      className: freshman ? freshman.className : '',
+    })
+    user = created.user
+  }
+  const token = jwt.sign({ userId: user.id, openid: user.openid }, config.jwtSecret, { expiresIn: '30d' })
+  return res.json({
+    code: 0,
+    message: 'APP 登录成功',
+    data: { token, user },
   })
 })
 

@@ -131,6 +131,7 @@ const DEFAULT_FIELDS = {
 const DEFAULT_CONFIG = {
   enabled: true,
   templateId: config.wxReminderTemplateId || '',
+  electricityTemplateId: config.wxElectricityTemplateId || '',
   templateType: 'once', // long = 长期订阅（教育政务等专属类目） | once = 一次性订阅（大部分通用类目，每次授权下发一次）
   miniprogramState: 'formal', // formal | trial | developer
   page: 'pages/schedule/schedule',
@@ -243,6 +244,10 @@ function sanitizeConfig(input, current) {
   const next = deepMerge(base, {
     enabled: src.enabled === undefined ? base.enabled : Boolean(src.enabled),
     templateId: src.templateId === undefined ? base.templateId : String(src.templateId).trim(),
+    electricityTemplateId:
+      src.electricityTemplateId === undefined
+        ? base.electricityTemplateId || ''
+        : String(src.electricityTemplateId).trim(),
     templateType: src.templateType === undefined ? base.templateType : src.templateType,
     miniprogramState: src.miniprogramState === undefined ? base.miniprogramState : src.miniprogramState,
     page: src.page === undefined ? base.page : String(src.page).trim().replace(/^\//, ''),

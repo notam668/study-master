@@ -318,5 +318,44 @@ router.post('/ocr-import', async (req, res) => {
   }
 })
 
+const jwxtService = require('../services/jwxtService')
+
+/**
+ * 盐城工学院正方教务系统个人课表拉取与解析导入
+ * POST /api/schedule/import-jwxt
+ * Body: { studentId, password, termId?, rawKbJson? }
+ */
+router.post('/import-jwxt', optionalAuth, async (req, res) => {
+  try {
+    const { studentId, password, termId, rawKbJson } = req.body || {}
+    const result = await jwxtService.importFromJwxt({
+      studentId,
+      password,
+      termId,
+      rawKbJson,
+      user: req.user || null,
+    })
+
+    // 自动保存至当前登录用户的云端专属课表
+    if (req.user) {
+      const keys = [req.user.studentId, req.user.openid, req.user.phone, req.user.id, studentId].filter(Boolean)
+      keys.forEach(k => db.saveUserSchedule(String(k).trim(), result))
+    } else if (studentId) {
+      db.saveUserSchedule(String(studentId).trim(), result)
+    }
+
+    return res.json({
+      code: 0,
+      message: '教务系统课表同步成功',
+      data: result,
+    })
+  } catch (err) {
+    return res.status(400).json({
+      code: 400,
+      message: err.message || '教务课表同步失败',
+    })
+  }
+})
+
 module.exports = router
 

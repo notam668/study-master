@@ -95,6 +95,26 @@ router.get('/my-exams', authMiddleware, (req, res) => {
 })
 
 /**
+ * 获取指定题库的三维排行榜（速度榜 / 正确率榜 / 勤奋榜）
+ * GET /api/analytics/leaderboard?bankId=bank-junli
+ */
+router.get('/leaderboard', optionalAuth, (req, res) => {
+  const bankId = String((req.query && req.query.bankId) || 'bank-junli').trim()
+  const userId = (req.user && req.user.id) || String((req.query && req.query.userId) || '')
+  const openid =
+    (req.user && req.user.openid) ||
+    req.headers['x-wx-openid'] ||
+    String((req.query && req.query.openid) || '')
+
+  const data = db.getBankLeaderboard(bankId, userId, openid)
+  return res.json({
+    code: 0,
+    message: '获取排行榜成功',
+    data,
+  })
+})
+
+/**
  * 校验口令是否与系统配置的管理员密码匹配
  */
 function isAuthorizedAdmin(token) {
@@ -382,6 +402,36 @@ router.get('/cloud-status', adminAuth, async (req, res) => {
       localOverview: stats.overview || {},
     },
   })
+})
+
+/**
+ * 反爬虫封禁黑名单管理（IP / 微信 OpenID）
+ * GET /api/admin/security-blocks
+ * POST /api/admin/security-blocks
+ * DELETE /api/admin/security-blocks/:id
+ */
+router.get('/security-blocks', adminAuth, (req, res) => {
+  return res.json({
+    code: 0,
+    data: { list: db.getSecurityBlocks() },
+  })
+})
+
+router.post('/security-blocks', adminAuth, (req, res) => {
+  const { type = 'ip', value = '', reason = '' } = req.body || {}
+  if (!value || !String(value).trim()) {
+    return res.status(400).json({ code: 400, message: '请提供要封禁的 IP 或微信 OpenID' })
+  }
+  const item = db.addSecurityBlock({ type, value, reason })
+  return res.json({ code: 0, message: '已加入安全封禁黑名单', data: item })
+})
+
+router.delete('/security-blocks/:id', adminAuth, (req, res) => {
+  const ok = db.removeSecurityBlock(req.params.id)
+  if (!ok) {
+    return res.status(404).json({ code: 404, message: '未找到该封禁记录' })
+  }
+  return res.json({ code: 0, message: '已解除封禁' })
 })
 
 module.exports = router

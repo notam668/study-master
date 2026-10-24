@@ -10,6 +10,8 @@ const analyticsRouter = require('./routes/analytics')
 const scheduleRouter = require('./routes/schedule')
 const announcementRouter = require('./routes/announcement')
 const reminderRouter = require('./routes/reminder')
+const electricityRouter = require('./routes/electricity')
+const { securityMiddleware } = require('./middleware/security')
 const scheduleService = require('./services/scheduleService')
 const reminderService = require('./services/reminderService')
 const db = require('./db')
@@ -37,6 +39,9 @@ app.use(
   })
 )
 
+// 安全防护与反爬虫中间件（速率限制、IP/OpenID 封禁、签名校验）
+app.use(securityMiddleware)
+
 // 路由挂载
 app.use('/api/auth', authRouter)
 app.use('/api/analytics', analyticsRouter)
@@ -44,6 +49,7 @@ app.use('/api/admin', analyticsRouter)
 app.use('/api/schedule', scheduleRouter)
 app.use('/api/announcement', announcementRouter)
 app.use('/api/reminder', reminderRouter)
+app.use('/api/electricity', electricityRouter)
 
 // 根路由与健康检查（供云托管探活）
 app.get('/health', (req, res) => {

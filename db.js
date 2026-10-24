@@ -245,7 +245,7 @@ const db = {
     return { user, isNew }
   },
 
-  updateUserProfile(userId, { realName, className, phone, studentId, nickname, avatarUrl }) {
+  updateUserProfile(userId, { realName, className, phone, studentId, nickname, avatarUrl, grade, college, major, campus, rankDisplayMode, isFreshmanVerified }) {
     const d = loadDb()
     const user = d.users.find(u => u.id === userId)
     if (!user) return null
@@ -255,7 +255,17 @@ const db = {
       user.avatarText = user.realName ? user.realName.charAt(0) : ''
     }
     if (className !== undefined) user.className = (className || '').trim()
-    
+    if (grade !== undefined) user.grade = String(grade || '').trim()
+    if (college !== undefined) user.college = String(college || '').trim()
+    if (major !== undefined) user.major = String(major || '').trim()
+    if (campus !== undefined) user.campus = String(campus || '').trim()
+    if (rankDisplayMode !== undefined) {
+      user.rankDisplayMode = rankDisplayMode === 'realName' ? 'realName' : 'nickname'
+    }
+    if (isFreshmanVerified !== undefined) {
+      user.isFreshmanVerified = Boolean(isFreshmanVerified)
+    }
+
     const { phone: cleanPhone, studentId: cleanStudentId } = normalizePhoneAndStudentId(
       phone !== undefined ? phone : user.phone,
       studentId !== undefined ? studentId : user.studentId
@@ -1169,6 +1179,403 @@ const db = {
     if (!d.userSchedules || typeof d.userSchedules !== 'object') return null
     const cleanKey = String(userKey).trim()
     return d.userSchedules[cleanKey] || null
+  },
+
+  // ───────────────────────── 2026 新生名单自动认证与严格校验 ─────────────────────────
+  _freshmenCache: null,
+  _loadFreshmenData() {
+    if (this._freshmenCache) return this._freshmenCache
+    try {
+      const fPath = path.join(__dirname, 'data', 'freshmen_2026.json')
+      if (fs.existsSync(fPath)) {
+        this._freshmenCache = JSON.parse(fs.readFileSync(fPath, 'utf8'))
+        return this._freshmenCache
+      }
+    } catch (e) {
+      console.error('[DB] 加载 2026 新生名单异常:', e.message)
+    }
+    this._freshmenCache = { colleges: [], students: {} }
+    return this._freshmenCache
+  },
+
+  lookupFreshman(studentId) {
+    const sid = String(studentId || '').trim()
+    if (!sid) return null
+    const data = this._loadFreshmenData()
+    return (data.students && data.students[sid]) || null
+  },
+
+  getCollegesMeta() {
+    const data = this._loadFreshmenData()
+    return Array.isArray(data.colleges) ? data.colleges : []
+  },
+
+  /**
+   * 严格校验用户提交的姓名、学号、手机号、班级，拦截一切敷衍/伪造输入
+   */
+  validateProfileInput({ realName, phone, studentId, className, grade }) {
+    const name = String(realName || '').trim()
+    const ph = String(phone || '').trim()
+    const sid = String(studentId || '').trim()
+    const cls = String(className || '').trim()
+
+    // 1. 姓名校验：必须为 2~10 位合法汉字（支持少数民族间隔号 ·），拦截“1”、“测试”、“张张张”
+    const nameRegex = /^[\u4e00-\u9fa5]{2,6}(?:[·•][\u4e00-\u9fa5]{1,6})?$/
+    const forbiddenNames = new Set(['测试', '学生', '姓名', '匿名', '未知', '管理员', '用户', '哈哈', '啊啊', '啦啦'])
+    if (!nameRegex.test(name) || forbiddenNames.has(name) || /^(.)\1+$/.test(name)) {
+      return { valid: false, message: '请输入真实的中文姓名（2~10个汉字，不可为数字、符号或无效测试词）' }
+    }
+
+    // 2. 学号校验：若填写则必须为 8~14 位有效数字，且若选择 2026 级大一则核对 2026 新生库
+    if (sid) {
+      if (!/^\d{8,14}$/.test(sid) || /^(\d)\1{6,}$/.test(sid)) {
+        return { valid: false, message: '请输入正确的盐城工学院学号（如 260101011001）' }
+      }
+      if (grade === '2026级' || sid.startsWith('26')) {
+        const matched = this.lookupFreshman(sid)
+        if (matched && matched.realName && matched.realName !== name) {
+          return { valid: false, message: `学号 ${sid} 与新生档案姓名不符，请确认学号是否正确` }
+        }
+      }
+    }
+
+    // 3. 班级校验
+    if (!cls || cls.length < 2 || /^\d+$/.test(cls)) {
+      return { valid: false, message: '请选择或填写正确的班级名称（如 B机制261）' }
+    }
+
+    // 4. 手机号严格校验：11位合法号段 + 拦截连号/豹子号（如 17811111111、13800000000、13812345678）
+    if (!/^1[3-9]\d{9}$/.test(ph)) {
+      return { valid: false, message: '请输入正确的 11 位手机号码' }
+    }
+    const tail8 = ph.slice(3)
+    if (
+      /(\d)\1{5,}/.test(ph) ||
+      tail8 === '12345678' ||
+      tail8 === '87654321' ||
+      tail8 === '01234567' ||
+      /^(\d\d)\1{3}$/.test(tail8)
+    ) {
+      return { valid: false, message: '检测到无效或伪造手机号码（如连续重复数字），请填写真实常用手机号' }
+    }
+
+    return { valid: true }
+  },
+
+  // ───────────────────────── 分题库三维排行榜（速度榜 / 正确率榜 / 勤奋榜） ─────────────────────────
+  getBankLeaderboard(bankId = 'bank-junli', currentUserId = '', currentOpenid = '') {
+    const d = loadDb()
+    const cleanBankId = String(bankId || 'bank-junli').trim()
+
+    const bankTitleAlias = {
+      'bank-junli': ['军事理论', '军事理论题库'],
+      'bank-sixiu': ['思想道德与法治', '思修'],
+      'bank-jindaishi': ['中国近现代史纲要', '近代史'],
+      'bank-mayuan': ['马克思主义基本原理', '马原'],
+      'bank-maogai': ['毛泽东思想和中国特色社会主义理论体系概论', '毛概'],
+      'bank-computer': ['大学计算机基础', '计算机基础'],
+    }
+    const allowedTitles = bankTitleAlias[cleanBankId] || []
+
+    const matchBank = (ev) => {
+      if (!ev) return false
+      if (cleanBankId === 'all') return true
+      if (ev.bankId && ev.bankId === cleanBankId) return true
+      if (ev.bankTitle && allowedTitles.some(t => String(ev.bankTitle).includes(t))) return true
+      return false
+    }
+
+    const userMap = new Map()
+    d.users.forEach(u => {
+      if (u.id) userMap.set(u.id, u)
+      if (u.openid) userMap.set(u.openid, u)
+    })
+
+    // 解析耗时字符串（如 "04:18"、"4分18秒"、"8分钟"）为秒数
+    const parseDurationSec = (rawDur) => {
+      if (!rawDur) return null
+      if (typeof rawDur === 'number' && rawDur > 0) return rawDur
+      const s = String(rawDur).trim()
+      const mmss = s.match(/^(\d{1,3}):(\d{1,2})$/)
+      if (mmss) return parseInt(mmss[1], 10) * 60 + parseInt(mmss[2], 10)
+      const cnMinSec = s.match(/(\d+)\s*分(?:钟)?\s*(\d+)?\s*秒?/)
+      if (cnMinSec) {
+        return parseInt(cnMinSec[1], 10) * 60 + (cnMinSec[2] ? parseInt(cnMinSec[2], 10) : 0)
+      }
+      const secOnly = s.match(/^(\d+)\s*秒$/)
+      if (secOnly) return parseInt(secOnly[1], 10)
+      return null
+    }
+
+    const formatDurationSec = (sec) => {
+      const s = Math.max(1, Math.round(Number(sec) || 0))
+      const m = Math.floor(s / 60)
+      const rem = s % 60
+      return m > 0 ? `${m}分${String(rem).padStart(2, '0')}秒` : `${rem}秒`
+    }
+
+    // 格式化用户排行榜显示名称（严格保护隐私，按用户选择的 rankDisplayMode 展示）
+    const getDisplayName = (u, fallbackName = '') => {
+      if (!u) return fallbackName || '盐工同学'
+      const mode = u.rankDisplayMode || 'nickname'
+      if (mode === 'realName' && u.realName) {
+        return u.realName
+      }
+      if (u.nickname && !u.nickname.startsWith('微信用户_') && u.nickname !== '考生') {
+        return u.nickname
+      }
+      if (u.realName) {
+        return `${u.realName.charAt(0)}*同学`
+      }
+      return `盐工同学_${String(u.id || u.openid || '001').slice(-3)}`
+    }
+
+    const statsByUserKey = new Map()
+    const ensureEntry = (u, rawKey) => {
+      const key = (u && (u.id || u.openid)) || rawKey
+      if (!key) return null
+      if (!statsByUserKey.has(key)) {
+        const displayName = getDisplayName(u)
+        statsByUserKey.set(key, {
+          userKey: key,
+          userId: (u && u.id) || '',
+          openid: (u && u.openid) || '',
+          displayName,
+          avatarChar: displayName.charAt(0) || '学',
+          className: (u && u.className) || '盐工考生',
+          college: (u && u.college) || '',
+          examCount: 0,
+          practiceCount: 0,
+          totalDiligence: 0,
+          bestScore: 0,
+          bestAccuracy: 0,
+          sumAccuracy: 0,
+          bestPassDurationSec: null,
+          bestPassScore: 0,
+        })
+      }
+      return statsByUserKey.get(key)
+    }
+
+    d.events.forEach(ev => {
+      if (!matchBank(ev)) return
+      const u = (ev.userId && userMap.get(ev.userId)) || (ev.openid && userMap.get(ev.openid)) || null
+      const entry = ensureEntry(u, ev.userId || ev.openid)
+      if (!entry) return
+
+      if (ev.eventType === 'finish_exam') {
+        const total = ev.total && ev.total > 0 ? ev.total : 100
+        const score = Number(ev.score) || 0
+        const acc = Math.min(100, Math.round((score / total) * 100))
+        entry.examCount++
+        entry.totalDiligence++
+        entry.sumAccuracy += acc
+        if (score > entry.bestScore) entry.bestScore = score
+        if (acc > entry.bestAccuracy) entry.bestAccuracy = acc
+
+        // 及格（>=60%）计入速度榜候选
+        if (acc >= 60) {
+          const durSec = parseDurationSec(
+            (ev.meta && (ev.meta.durationSeconds || ev.meta.duration)) || ev.duration
+          )
+          // 若历史记录未传秒数，按题量与得分给合理基准秒数
+          const effectiveSec = durSec && durSec >= 15 ? durSec : Math.max(120, Math.round(total * 4.5 - score * 1.2))
+          if (
+            entry.bestPassDurationSec === null ||
+            effectiveSec < entry.bestPassDurationSec ||
+            (effectiveSec === entry.bestPassDurationSec && score > entry.bestPassScore)
+          ) {
+            entry.bestPassDurationSec = effectiveSec
+            entry.bestPassScore = score
+          }
+        }
+      } else if (ev.eventType === 'start_practice') {
+        entry.practiceCount++
+        entry.totalDiligence++
+      }
+    })
+
+    // 补充云托管同步过来的考生练习次数（针对主库军事理论或全量榜）
+    if (cleanBankId === 'bank-junli' || cleanBankId === 'all') {
+      d.users.forEach(u => {
+        const cPrac = Number(u.cloudPracticeCount) || 0
+        const cExam = Number(u.cloudExamCount) || 0
+        if (cPrac > 0 || cExam > 0) {
+          const entry = ensureEntry(u, u.id || u.openid)
+          if (entry) {
+            entry.practiceCount = Math.max(entry.practiceCount, cPrac)
+            entry.examCount = Math.max(entry.examCount, cExam)
+            entry.totalDiligence = Math.max(entry.totalDiligence, entry.practiceCount + entry.examCount)
+            if (entry.bestAccuracy === 0 && Number(u.cloudAvgAccuracy) > 0) {
+              entry.bestAccuracy = Math.min(100, Number(u.cloudAvgAccuracy))
+              entry.sumAccuracy = entry.bestAccuracy * Math.max(1, entry.examCount)
+              entry.bestScore = Number(u.cloudMaxScore) || entry.bestAccuracy
+            }
+          }
+        }
+      })
+    }
+
+    const allEntries = Array.from(statsByUserKey.values())
+
+    // 1. 速度榜：及格且耗时最短
+    const speedRaw = allEntries
+      .filter(x => x.bestPassDurationSec !== null)
+      .sort((a, b) => {
+        if (a.bestPassDurationSec !== b.bestPassDurationSec) {
+          return a.bestPassDurationSec - b.bestPassDurationSec
+        }
+        return b.bestPassScore - a.bestPassScore
+      })
+
+    // 2. 正确率榜：平均正确率 -> 最高正确率 -> 考试次数
+    const accuracyRaw = allEntries
+      .filter(x => x.examCount > 0 && x.bestAccuracy > 0)
+      .map(x => ({
+        ...x,
+        avgAccuracy: Math.min(100, Math.round(x.sumAccuracy / x.examCount)),
+      }))
+      .sort((a, b) => {
+        if (b.avgAccuracy !== a.avgAccuracy) return b.avgAccuracy - a.avgAccuracy
+        if (b.bestAccuracy !== a.bestAccuracy) return b.bestAccuracy - a.bestAccuracy
+        return b.examCount - a.examCount
+      })
+
+    // 3. 勤奋榜：刷题总次数 + 模考次数
+    const diligenceRaw = allEntries
+      .filter(x => x.totalDiligence > 0)
+      .sort((a, b) => {
+        if (b.totalDiligence !== a.totalDiligence) return b.totalDiligence - a.totalDiligence
+        return b.examCount - a.examCount
+      })
+
+    const isMe = (x) =>
+      Boolean(
+        (currentUserId && (x.userId === currentUserId || x.userKey === currentUserId)) ||
+        (currentOpenid && (x.openid === currentOpenid || x.userKey === currentOpenid))
+      )
+
+    const findMyRank = (list) => {
+      const idx = list.findIndex(isMe)
+      return idx >= 0 ? idx + 1 : null
+    }
+
+    return {
+      bankId: cleanBankId,
+      speedList: speedRaw.slice(0, 50).map((x, i) => ({
+        rank: i + 1,
+        displayName: x.displayName,
+        avatarChar: x.avatarChar,
+        className: x.className,
+        valueText: formatDurationSec(x.bestPassDurationSec),
+        subText: `最高 ${x.bestPassScore} 分`,
+        isMe: isMe(x),
+      })),
+      accuracyList: accuracyRaw.slice(0, 50).map((x, i) => ({
+        rank: i + 1,
+        displayName: x.displayName,
+        avatarChar: x.avatarChar,
+        className: x.className,
+        valueText: `${x.avgAccuracy}%`,
+        subText: `模考 ${x.examCount} 次 · 最高 ${x.bestScore} 分`,
+        isMe: isMe(x),
+      })),
+      diligenceList: diligenceRaw.slice(0, 50).map((x, i) => ({
+        rank: i + 1,
+        displayName: x.displayName,
+        avatarChar: x.avatarChar,
+        className: x.className,
+        valueText: `${x.totalDiligence} 次`,
+        subText: `练习 ${x.practiceCount} 次 · 模考 ${x.examCount} 次`,
+        isMe: isMe(x),
+      })),
+      myRanks: {
+        speedRank: findMyRank(speedRaw),
+        accuracyRank: findMyRank(accuracyRaw),
+        diligenceRank: findMyRank(diligenceRaw),
+      },
+      updatedAt: Date.now(),
+    }
+  },
+
+  // ───────────────────────── 宿舍电费监控与低电费预警存储 ─────────────────────────
+  saveUserDorm(userKey, dormInfo = {}) {
+    if (!userKey) return null
+    const d = loadDb()
+    if (!d.userDorms || typeof d.userDorms !== 'object') d.userDorms = {}
+    const cleanKey = String(userKey).trim()
+    const prev = d.userDorms[cleanKey] || {}
+    d.userDorms[cleanKey] = {
+      ...prev,
+      ...dormInfo,
+      userKey: cleanKey,
+      updatedAt: Date.now(),
+    }
+    saveDb()
+    return d.userDorms[cleanKey]
+  },
+
+  getUserDorm(userKey) {
+    if (!userKey) return null
+    const d = loadDb()
+    if (!d.userDorms || typeof d.userDorms !== 'object') return null
+    return d.userDorms[String(userKey).trim()] || null
+  },
+
+  getAllUserDorms() {
+    const d = loadDb()
+    if (!d.userDorms || typeof d.userDorms !== 'object') return []
+    return Object.values(d.userDorms)
+  },
+
+  // ───────────────────────── 反爬虫 IP 与微信账号封禁管理 ─────────────────────────
+  checkSecurityBlock(ip, openid) {
+    const d = loadDb()
+    if (!Array.isArray(d.securityBlocks)) return { blocked: false }
+    const hit = d.securityBlocks.find(
+      b => (ip && b.type === 'ip' && b.value === ip) || (openid && b.type === 'openid' && b.value === openid)
+    )
+    if (hit) {
+      return { blocked: true, reason: hit.reason || '已被安全策略封禁', item: hit }
+    }
+    return { blocked: false }
+  },
+
+  addSecurityBlock({ type = 'ip', value = '', reason = '' }) {
+    const cleanVal = String(value || '').trim()
+    if (!cleanVal) return null
+    const d = loadDb()
+    if (!Array.isArray(d.securityBlocks)) d.securityBlocks = []
+    let existing = d.securityBlocks.find(b => b.type === type && b.value === cleanVal)
+    if (!existing) {
+      existing = {
+        id: `blk_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type,
+        value: cleanVal,
+        reason: reason || '管理员手动封禁',
+        createdAt: Date.now(),
+      }
+      d.securityBlocks.unshift(existing)
+      saveDb()
+    }
+    return existing
+  },
+
+  removeSecurityBlock(idOrValue) {
+    const d = loadDb()
+    if (!Array.isArray(d.securityBlocks)) return false
+    const before = d.securityBlocks.length
+    d.securityBlocks = d.securityBlocks.filter(b => b.id !== idOrValue && b.value !== idOrValue)
+    if (d.securityBlocks.length !== before) {
+      saveDb()
+      return true
+    }
+    return false
+  },
+
+  getSecurityBlocks() {
+    const d = loadDb()
+    return Array.isArray(d.securityBlocks) ? d.securityBlocks : []
   },
 
   flushSync,
