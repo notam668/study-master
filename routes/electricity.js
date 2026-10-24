@@ -17,6 +17,36 @@ function resolveUserKey(req) {
 }
 
 /**
+ * 级联查询盐城工学院官方电控系统 (finance.ycit.edu.cn) 的真实校区 / 楼栋 / 房间列表
+ * GET /api/electricity/rooms-meta?campusId=1&buildingId=303
+ */
+router.get('/rooms-meta', async (req, res) => {
+  try {
+    const campusId = req.query.campusId ? Number(req.query.campusId) : null
+    const buildingId = req.query.buildingId ? Number(req.query.buildingId) : null
+
+    const campuses = await electricityService.listCampuses()
+    const targetCampusId = campusId || (campuses[0] ? campuses[0].campusId : 1)
+    const buildings = await electricityService.listBuildings(targetCampusId)
+    const targetBuildingId = buildingId || (buildings[0] ? buildings[0].buildingId : 0)
+    const rooms = targetBuildingId ? await electricityService.listRooms(targetBuildingId) : []
+
+    return res.json({
+      code: 0,
+      data: {
+        campuses,
+        campusId: targetCampusId,
+        buildings,
+        buildingId: targetBuildingId,
+        rooms,
+      },
+    })
+  } catch (err) {
+    return res.status(500).json({ code: 500, message: err.message || '获取宿舍列表失败' })
+  }
+})
+
+/**
  * 查询当前用户绑定的宿舍实时电费余量与预警状态
  * GET /api/electricity/status
  */
@@ -34,7 +64,7 @@ router.get('/status', optionalAuth, async (req, res) => {
     })
   }
 
-  const state = electricityService.computeRealtimeBalance(record)
+  const state = await electricityService.computeRealtimeBalance(record)
 
   // 当余额低于 10 度且存在有效微信 openid 时，自动触发低电费微信服务通知
   const openid = (req.user && req.user.openid) || req.headers['x-wx-openid'] || record.openid || ''
@@ -55,15 +85,25 @@ router.get('/status', optionalAuth, async (req, res) => {
 /**
  * 绑定寝室或同步电表电量与低电费预警设置
  * POST /api/electricity/bind
- * Body: { campus, building, room, meterId?, alertEnabled?, calibratedBalance? }
  */
 router.post('/bind', optionalAuth, async (req, res) => {
-  const { campus = '北校区', building = '', room = '', meterId = '', alertEnabled = true, calibratedBalance } = req.body || {}
+  const {
+    campus = '南校区',
+    campusId = 1,
+    building = '',
+    buildingId = 0,
+    room = '',
+    roomId = 0,
+    meterId = '',
+    alertEnabled = true,
+    calibratedBalance,
+    financeJsessionId = '',
+  } = req.body || {}
   const cleanBuilding = String(building || '').trim()
   const cleanRoom = String(room || '').trim()
 
   if (!cleanBuilding || !cleanRoom) {
-    return res.status(400).json({ code: 400, message: '请选择或填写宿舍楼栋与寝室号（如 5号楼 302）' })
+    return res.status(400).json({ code: 400, message: '请选择宿舍楼栋与寝室账户（如 南校区 12号楼 125053kt）' })
   }
 
   const userKey = resolveUserKey(req) || `dorm_${campus}_${cleanBuilding}_${cleanRoom}`
@@ -71,22 +111,35 @@ router.post('/bind', optionalAuth, async (req, res) => {
 
   const patch = {
     campus,
+    campusId: Number(campusId) || (campus.includes('南') ? 1 : 2),
     building: cleanBuilding,
+    buildingId: Number(buildingId) || 0,
     room: cleanRoom,
+    roomId: Number(roomId) || 0,
     meterId: String(meterId || '').trim(),
     alertEnabled: alertEnabled !== false,
     openid: openid || undefined,
   }
 
+  if (financeJsessionId && String(financeJsessionId).trim()) {
+    patch.financeJsessionId = String(financeJsessionId).trim()
+  }
+
   if (calibratedBalance !== undefined && calibratedBalance !== '' && !isNaN(Number(calibratedBalance))) {
     patch.baseBalance = Math.max(0, Number(calibratedBalance))
     patch.baseUpdatedAt = Date.now()
+  } else {
+    // 切换寝室时如未传校准值，清除旧寝室残留的 baseBalance，以使用真实网关或预置快照
+    const existing = db.getUserDorm(userKey)
+    if (existing && (existing.room !== cleanRoom || existing.building !== cleanBuilding || existing.campus !== campus)) {
+      patch.baseBalance = null
+      patch.baseUpdatedAt = null
+    }
   }
 
   const saved = db.saveUserDorm(userKey, patch)
-  const state = electricityService.computeRealtimeBalance(saved)
+  const state = await electricityService.computeRealtimeBalance(saved)
 
-  // 若绑定/校准后电量已低于 10 度，立即检测并推送预警通知
   let alertResult = null
   if (state.isLowBalance && openid && !openid.startsWith('mock_')) {
     alertResult = await electricityService.triggerLowElectricityAlertIfNeeded(openid, state).catch(() => null)
@@ -94,7 +147,7 @@ router.post('/bind', optionalAuth, async (req, res) => {
 
   return res.json({
     code: 0,
-    message: '寝室电表绑定成功',
+    message: '宿舍电表账户已更新',
     data: {
       bound: true,
       dorm: state,
