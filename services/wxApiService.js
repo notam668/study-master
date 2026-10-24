@@ -398,7 +398,126 @@ async function healthCheck() {
   }
 }
 
+let wxAnalyticsCache = null
+let wxAnalyticsCachedAt = 0
+const WX_ANALYTICS_TTL_MS = 10 * 60 * 1000 // 10 分钟缓存
+
+function formatYmd(dateMs) {
+  const d = new Date(dateMs + 8 * 3600 * 1000)
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
+
+function formatDashDate(ymd) {
+  const s = String(ymd || '')
+  if (s.length === 8) {
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`
+  }
+  return s
+}
+
+function calcGrowthRate(curr, prev) {
+  const c = Number(curr || 0)
+  const p = Number(prev || 0)
+  if (p <= 0) return c > 0 ? 100 : 0
+  return Number((((c - p) / p) * 100).toFixed(2))
+}
+
+/**
+ * 拉取微信小程序官方 DataCube 核心统计指标（累计用户数、昨日打开次数、DAU、新增用户及日环比）
+ */
+async function getWechatOfficialAnalytics(forceRefresh = false) {
+  if (!forceRefresh && wxAnalyticsCache && Date.now() - wxAnalyticsCachedAt < WX_ANALYTICS_TTL_MS) {
+    return wxAnalyticsCache
+  }
+
+  try {
+    const nowMs = Date.now()
+    const dailyRecords = []
+
+    // 依次查询最近 1~4 天（微信官方每日数据通常在次日早上 8~9 点完成结算）
+    for (let offset = 1; offset <= 4; offset++) {
+      const ds = formatYmd(nowMs - offset * 86400 * 1000)
+      const [summaryRes, visitRes] = await Promise.all([
+        callWx('POST', '/datacube/getweanalysisappiddailysummarytrend', {
+          data: { begin_date: ds, end_date: ds },
+          timeout: 6000,
+        }).catch(() => null),
+        callWx('POST', '/datacube/getweanalysisappiddailyvisittrend', {
+          data: { begin_date: ds, end_date: ds },
+          timeout: 6000,
+        }).catch(() => null),
+      ])
+
+      const sItem = summaryRes && Array.isArray(summaryRes.list) && summaryRes.list[0] ? summaryRes.list[0] : null
+      const vItem = visitRes && Array.isArray(visitRes.list) && visitRes.list[0] ? visitRes.list[0] : null
+
+      if (sItem || vItem) {
+        dailyRecords.push({
+          refDate: formatDashDate((sItem && sItem.ref_date) || (vItem && vItem.ref_date) || ds),
+          rawDate: ds,
+          visitTotal: Number((sItem && sItem.visit_total) || 0),
+          sharePv: Number((sItem && sItem.share_pv) || 0),
+          shareUv: Number((sItem && sItem.share_uv) || 0),
+          sessionCnt: Number((vItem && vItem.session_cnt) || 0),
+          visitPv: Number((vItem && vItem.visit_pv) || 0),
+          visitUv: Number((vItem && vItem.visit_uv) || 0),
+          visitUvNew: Number((vItem && vItem.visit_uv_new) || 0),
+          stayTimeUv: Number((vItem && vItem.stay_time_uv) || 0),
+          stayTimeSession: Number((vItem && vItem.stay_time_session) || 0),
+          visitDepth: Number((vItem && vItem.visit_depth) || 0),
+        })
+      }
+
+      if (dailyRecords.length >= 2 && offset >= 3) {
+        break
+      }
+    }
+
+    if (dailyRecords.length > 0) {
+      const latest = dailyRecords[0]
+      const prev = dailyRecords[1] || latest
+
+      const result = {
+        refDate: latest.refDate,
+        prevDate: prev.refDate,
+        visitTotal: latest.visitTotal,
+        visitTotalDiff: latest.visitTotal - prev.visitTotal,
+        visitTotalGrowthRate: calcGrowthRate(latest.visitTotal, prev.visitTotal),
+        sessionCnt: latest.sessionCnt,
+        prevSessionCnt: prev.sessionCnt,
+        sessionCntGrowthRate: calcGrowthRate(latest.sessionCnt, prev.sessionCnt),
+        visitPv: latest.visitPv,
+        prevVisitPv: prev.visitPv,
+        visitPvGrowthRate: calcGrowthRate(latest.visitPv, prev.visitPv),
+        visitUv: latest.visitUv,
+        prevVisitUv: prev.visitUv,
+        visitUvGrowthRate: calcGrowthRate(latest.visitUv, prev.visitUv),
+        visitUvNew: latest.visitUvNew,
+        prevVisitUvNew: prev.visitUvNew,
+        visitUvNewGrowthRate: calcGrowthRate(latest.visitUvNew, prev.visitUvNew),
+        stayTimeUv: Math.round(latest.stayTimeUv || 0),
+        stayTimeSession: Math.round(latest.stayTimeSession || 0),
+        visitDepth: Number((latest.visitDepth || 0).toFixed(2)),
+        sharePv: latest.sharePv,
+        shareUv: latest.shareUv,
+        recentDays: dailyRecords,
+        updatedAt: Date.now(),
+        source: 'wechat_datacube_live',
+      }
+
+      wxAnalyticsCache = result
+      wxAnalyticsCachedAt = Date.now()
+      return result
+    }
+  } catch (err) {
+    console.warn('[WxApi] 拉取微信官方 DataCube 统计异常:', err.message)
+  }
+
+  return wxAnalyticsCache
+}
+
 module.exports = {
+  callWx,
   getAccessToken,
   getTemplateList,
   parseTemplateFields,
@@ -408,5 +527,6 @@ module.exports = {
   getPublicTemplateKeywords,
   searchPublicTemplates,
   healthCheck,
+  getWechatOfficialAnalytics,
   TOKEN_ERROR_CODES,
 }

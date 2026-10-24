@@ -6,8 +6,10 @@ const path = require('path')
 const axios = require('axios')
 const db = require('../db')
 const config = require('../config')
+const wxApi = require('./wxApiService')
 
 const REMOTE_URL = 'https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com'
+const MIN_SYNC_INTERVAL_MS = 15 * 1000
 
 let lastSyncInfo = {
   lastSyncAt: null,
@@ -66,24 +68,51 @@ async function checkCloudStatus() {
   }
 }
 
-async function syncFromCloudBase() {
-  const t0 = Date.now()
-  console.log('[CloudSync] 正在从腾讯云托管线上服务拉取最新考生数据...')
-  try {
-    const res = await axios.get(`${REMOTE_URL}/api/admin/dashboard`, {
-      timeout: 25000,
-      headers: {
-        'User-Agent': 'StudyMaster-Sync/1.0',
-      },
-    })
+async function syncFromCloudBase(force = false) {
+  if (!force && lastSyncInfo.lastSyncAt && Date.now() - lastSyncInfo.lastSyncAt < MIN_SYNC_INTERVAL_MS) {
+    return {
+      success: true,
+      cached: true,
+      userCount: lastSyncInfo.userCount,
+      examCount: lastSyncInfo.examCount,
+      pingMs: lastSyncInfo.pingMs,
+      lastSyncAt: lastSyncInfo.lastSyncAt,
+    }
+  }
 
-    if (!res.data || res.data.code !== 0 || !res.data.data) {
-      throw new Error('云端服务返回数据格式不符合预期')
+  const t0 = Date.now()
+  console.log('[CloudSync] 正在从腾讯云托管与微信官方接口拉取最新考生及统计数据...')
+  try {
+    const [cloudRes, wxOfficial] = await Promise.all([
+      axios
+        .get(`${REMOTE_URL}/api/admin/dashboard`, {
+          timeout: 15000,
+          params: { token: 'studymaster2026' },
+          headers: {
+            'User-Agent': 'StudyMaster-Sync/1.0',
+            'x-admin-token': config.adminToken || 'studymaster2026',
+          },
+        })
+        .catch((err) => {
+          console.warn('[CloudSync] 云托管请求告警:', err.message)
+          return null
+        }),
+      wxApi.getWechatOfficialAnalytics(force).catch(() => null),
+    ])
+
+    let importedUsers = 0
+    let importedExams = 0
+
+    if (cloudRes && cloudRes.data && cloudRes.data.code === 0 && cloudRes.data.data) {
+      const cloudData = cloudRes.data.data
+      importedUsers = db.importCloudUsers(cloudData.users || [])
+      importedExams = db.importCloudExams(cloudData.allExams || [])
+      db.importCloudSnapshot(cloudData)
     }
 
-    const { users, allExams } = res.data.data
-    const importedUsers = db.importCloudUsers(users || [])
-    const importedExams = db.importCloudExams(allExams || [])
+    if (wxOfficial) {
+      db.saveWechatOfficialCache(wxOfficial)
+    }
 
     // 强制原子落盘
     db.flushSync()
@@ -101,9 +130,9 @@ async function syncFromCloudBase() {
     }
 
     // 触发云端上课提醒扫描并保活
-    axios.get(`${REMOTE_URL}/api/reminder/cron?token=${config.adminToken}`, { timeout: 10000 }).catch(() => {})
+    axios.get(`${REMOTE_URL}/api/reminder/cron?token=${config.adminToken}`, { timeout: 8000 }).catch(() => {})
 
-    console.log(`[CloudSync] 成功从云托管同步 ${importedUsers} 位真实考生与 ${importedExams} 份答题记录 (耗时 ${pingMs}ms)！`)
+    console.log(`[CloudSync] 成功同步 ${importedUsers} 位真实考生与 ${importedExams} 份新交卷及微信官方指标 (耗时 ${pingMs}ms)！`)
     return {
       success: true,
       userCount: importedUsers,

@@ -476,26 +476,45 @@ const db = {
   getStats() {
     const d = loadDb()
     const now = Date.now()
-    const todayZero = new Date().setHours(0, 0, 0, 0)
+    // 统一按北京时间 (UTC+8) 计算今日零点与昨日零点，避免 Vercel (UTC) 时区偏差
+    const tzOffsetMs = 8 * 3600 * 1000
+    const todayZero = Math.floor((now + tzOffsetMs) / 86400000) * 86400000 - tzOffsetMs
+    const yesterdayZero = todayZero - 86400000
+
+    // 建立用户 ID 和 openid 到用户的快速索引
+    const userMap = new Map()
+    d.users.forEach(u => {
+      userMap.set(u.id, u)
+      if (u.openid) userMap.set(u.openid, u)
+    })
 
     const totalUsers = d.users.length
     const todayUsers = d.users.filter(u => u.createdAt >= todayZero).length
-    
-    // 综合统计今日活跃人数（包含登录、做题及页面浏览）
+    const yesterdayUsers = d.users.filter(u => u.createdAt >= yesterdayZero && u.createdAt < todayZero).length
+
+    // 综合统计今日活跃人数（统一归并到唯一用户标识，消除 userId + openid 重复计数 Bug）
     const activeTodayUserSet = new Set(
-      d.users.filter(u => (u.lastLoginAt && u.lastLoginAt >= todayZero) || (u.createdAt && u.createdAt >= todayZero)).map(u => u.id)
+      d.users
+        .filter(u => (u.lastLoginAt && u.lastLoginAt >= todayZero) || (u.createdAt && u.createdAt >= todayZero))
+        .map(u => u.id || u.openid)
     )
     d.events.filter(e => e.createdAt >= todayZero).forEach(e => {
-      if (e.userId && e.userId !== 'anonymous') activeTodayUserSet.add(e.userId)
-      if (e.openid) activeTodayUserSet.add(e.openid)
+      const matchedUser = (e.userId && userMap.get(e.userId)) || (e.openid && userMap.get(e.openid))
+      if (matchedUser) {
+        activeTodayUserSet.add(matchedUser.id || matchedUser.openid)
+      } else if (e.openid) {
+        activeTodayUserSet.add(e.openid)
+      } else if (e.userId && e.userId !== 'anonymous') {
+        activeTodayUserSet.add(e.userId)
+      }
     })
     const activeUsersToday = activeTodayUserSet.size
 
     const completedProfiles = d.users.filter(u => u.isProfileCompleted).length
     const uncompletedProfiles = totalUsers - completedProfiles
 
-    const totalEvents = d.events.length
-    const todayEvents = d.events.filter(e => e.createdAt >= todayZero).length
+    const localTotalEvents = d.events.length
+    const localTodayEvents = d.events.filter(e => e.createdAt >= todayZero).length
 
     // 统计所有交卷与练习事件
     const examEvents = d.events.filter(e => e.eventType === 'finish_exam')
@@ -515,20 +534,32 @@ const db = {
     const overallAvgScore = examEvents.length > 0 ? Math.round(totalExamScoreSum / examEvents.length) : 0
     const examPassRate = examEvents.length > 0 ? Math.round((passedExamCount / examEvents.length) * 100) : 0
 
-    // 建立用户 ID 和 openid 到用户的快速索引
-    const userMap = new Map()
-    d.users.forEach(u => {
-      userMap.set(u.id, u)
-      if (u.openid) userMap.set(u.openid, u)
-    })
-
-    // 题库热度
+    // 题库热度（合并本地事件与云托管全量统计，并过滤乱码题库名）
     const bankMap = {}
+    const normalizeBankTitle = (rawTitle) => {
+      const t = String(rawTitle || '').trim()
+      if (!t || t.includes('??')) return ''
+      if (t === '军事理论') return '军事理论题库'
+      return t
+    }
     d.events.forEach(e => {
-      if (e.bankTitle) {
-        bankMap[e.bankTitle] = (bankMap[e.bankTitle] || 0) + 1
+      const cleanTitle = normalizeBankTitle(e.bankTitle)
+      if (cleanTitle) {
+        bankMap[cleanTitle] = (bankMap[cleanTitle] || 0) + 1
       }
     })
+    if (d.cloudMetrics && Array.isArray(d.cloudMetrics.popularBanks)) {
+      const cloudMerged = {}
+      d.cloudMetrics.popularBanks.forEach(item => {
+        const cleanTitle = normalizeBankTitle(item && item.title)
+        if (cleanTitle) {
+          cloudMerged[cleanTitle] = (cloudMerged[cleanTitle] || 0) + (Number(item.count) || 0)
+        }
+      })
+      Object.keys(cloudMerged).forEach(k => {
+        bankMap[k] = Math.max(bankMap[k] || 0, cloudMerged[k])
+      })
+    }
     const popularBanks = Object.keys(bankMap).map(k => ({ title: k, count: bankMap[k] }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 8)
@@ -538,17 +569,19 @@ const db = {
       const userExams = examEvents.filter(e => (u.id && e.userId === u.id) || (u.openid && e.openid === u.openid))
       const userPractices = practiceEvents.filter(e => (u.id && e.userId === u.id) || (u.openid && e.openid === u.openid))
 
-      const examCount = userExams.length
-      const maxScore = examCount > 0 ? Math.max(...userExams.map(e => e.score || 0)) : 0
+      const localExamCount = userExams.length
+      const examCount = Math.max(localExamCount, Number(u.cloudExamCount) || 0)
+      const maxScore = localExamCount > 0 ? Math.max(...userExams.map(e => e.score || 0)) : (Number(u.cloudMaxScore) || 0)
       const totalScore = userExams.reduce((sum, e) => sum + (e.score || 0), 0)
-      const avgScore = examCount > 0 ? Math.round(totalScore / examCount) : 0
+      const avgScore = localExamCount > 0 ? Math.round(totalScore / localExamCount) : (Number(u.cloudAvgScore) || 0)
 
       let totalAcc = 0
       userExams.forEach(e => {
         const total = e.total && e.total > 0 ? e.total : 100
         totalAcc += ((e.score || 0) / total) * 100
       })
-      const avgAccuracy = examCount > 0 ? Math.round(totalAcc / examCount) : 0
+      const avgAccuracy = localExamCount > 0 ? Math.round(totalAcc / localExamCount) : (Number(u.cloudAvgAccuracy) || 0)
+      const practiceCount = Math.max(userPractices.length, Number(u.cloudPracticeCount) || 0)
 
       // 手机号严格校验（必须为 11 位合法手机号）
       const rawPhone = (u.phone || '').trim()
@@ -584,7 +617,7 @@ const db = {
         maxScore,
         avgScore,
         avgAccuracy,
-        practiceCount: userPractices.length,
+        practiceCount,
       }
     }).sort((a, b) => {
       const timeA = a.lastLoginAt || a.createdAt || 0
@@ -675,20 +708,29 @@ const db = {
       }
     })
 
+    const cloudOv = (d.cloudMetrics && d.cloudMetrics.overview) || {}
+    const sumUserPractices = enrichedUsers.reduce((sum, u) => sum + (Number(u.practiceCount) || 0), 0)
+    const totalEvents = Math.max(localTotalEvents, Number(cloudOv.totalEvents) || 0)
+    const todayEvents = Math.max(localTodayEvents, Number(cloudOv.todayEvents) || 0)
+    const totalExamsFinished = Math.max(examEvents.length, Number(cloudOv.totalExamsFinished) || 0)
+    const totalPracticesStarted = Math.max(practiceEvents.length, Number(cloudOv.totalPracticesStarted) || 0, sumUserPractices)
+
     return {
       overview: {
         totalUsers,
         todayUsers,
+        yesterdayUsers,
         activeUsersToday,
         completedProfiles,
         uncompletedProfiles,
         totalEvents,
         todayEvents,
-        totalExamsFinished: examEvents.length,
-        totalPracticesStarted: practiceEvents.length,
-        overallAvgScore,
-        examPassRate,
+        totalExamsFinished,
+        totalPracticesStarted,
+        overallAvgScore: overallAvgScore || Number(cloudOv.overallAvgScore) || 0,
+        examPassRate: examPassRate || Number(cloudOv.examPassRate) || 0,
       },
+      wechatOfficial: d.wechatOfficialCache || null,
       popularBanks,
       recentLogs,
       users: enrichedUsers,
@@ -956,23 +998,28 @@ const db = {
     cloudUsers.forEach((cu) => {
       const existing = (cu.openid && userMap.get(cu.openid)) || (cu.id && userMap.get(cu.id))
       const cleaned = {
-        id: cu.id || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        openid: cu.openid || '',
-        nickname: cu.nickname || '考生',
-        realName: cu.realName || '',
-        className: cu.className || '',
-        studentId: cu.studentId || '',
-        phone: cu.phone || cu.displayPhone || '',
-        avatarText: cu.avatarText || (cu.realName ? cu.realName[0] : '考'),
-        avatarUrl: cu.avatarUrl || '',
+        id: cu.id || (existing && existing.id) || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        openid: cu.openid || (existing && existing.openid) || '',
+        nickname: cu.nickname || (existing && existing.nickname) || '考生',
+        realName: cu.realName || (existing && existing.realName) || '',
+        className: cu.className || (existing && existing.className) || '',
+        studentId: cu.studentId || (existing && existing.studentId) || '',
+        phone: cu.phone || cu.displayPhone || (existing && existing.phone) || '',
+        avatarText: cu.avatarText || (cu.realName ? cu.realName[0] : (existing && existing.avatarText) || '考'),
+        avatarUrl: cu.avatarUrl || (existing && existing.avatarUrl) || '',
         isProfileCompleted: Boolean(cu.isProfileCompleted || (cu.realName && cu.className && (cu.phone || cu.displayPhone))),
-        isExamUnlocked: Boolean(cu.isExamUnlocked),
-        examUnlockCode: cu.examUnlockCode || null,
-        examUnlockedAt: cu.examUnlockedAt || null,
-        createdAt: cu.createdAt || Date.now(),
-        lastLoginAt: cu.lastLoginAt || Date.now(),
-        loginCount: cu.loginCount || 1,
-        lastIp: cu.lastIp || '',
+        isExamUnlocked: Boolean(cu.isExamUnlocked || (existing && existing.isExamUnlocked)),
+        examUnlockCode: cu.examUnlockCode || cu.boundCode || (existing && existing.examUnlockCode) || null,
+        examUnlockedAt: cu.examUnlockedAt || cu.boundAt || (existing && existing.examUnlockedAt) || null,
+        createdAt: cu.createdAt || (existing && existing.createdAt) || Date.now(),
+        lastLoginAt: Math.max(Number(cu.lastLoginAt) || 0, Number(existing && existing.lastLoginAt) || 0) || Date.now(),
+        loginCount: Math.max(Number(cu.loginCount) || 1, Number(existing && existing.loginCount) || 1),
+        lastIp: cu.lastIp || (existing && existing.lastIp) || '',
+        cloudExamCount: Math.max(Number(cu.examCount) || 0, Number(existing && existing.cloudExamCount) || 0),
+        cloudMaxScore: Math.max(Number(cu.maxScore) || 0, Number(existing && existing.cloudMaxScore) || 0),
+        cloudAvgScore: Number(cu.avgScore) || Number(existing && existing.cloudAvgScore) || 0,
+        cloudAvgAccuracy: Number(cu.avgAccuracy) || Number(existing && existing.cloudAvgAccuracy) || 0,
+        cloudPracticeCount: Math.max(Number(cu.practiceCount) || 0, Number(existing && existing.cloudPracticeCount) || 0),
       }
 
       if (existing) {
@@ -1027,6 +1074,72 @@ const db = {
 
     saveDb()
     return updatedCount
+  },
+
+  /**
+   * 完整合并线上云托管快照（含 overview、popularBanks、recentLogs、activationStats 及清理乱码题库）
+   */
+  importCloudSnapshot(cloudData = {}) {
+    if (!cloudData || typeof cloudData !== 'object') return
+    const d = loadDb()
+    if (!Array.isArray(d.events)) d.events = []
+
+    // 清理早期测试产生的乱码题库名称
+    d.events.forEach((e) => {
+      if (e && typeof e.bankTitle === 'string' && e.bankTitle.includes('??')) {
+        e.bankTitle = '军事理论题库'
+      }
+    })
+
+    const existingEventIds = new Set(d.events.map((e) => e.id))
+    if (Array.isArray(cloudData.recentLogs)) {
+      cloudData.recentLogs.forEach((ev) => {
+        if (ev && ev.id && !existingEventIds.has(ev.id)) {
+          d.events.push({
+            id: ev.id,
+            userId: ev.userId || '',
+            openid: ev.openid || '',
+            eventType: ev.eventType || 'page_view',
+            bankId: ev.bankId || '',
+            bankTitle: (ev.bankTitle && !String(ev.bankTitle).includes('??')) ? ev.bankTitle : '',
+            score: typeof ev.score === 'number' ? ev.score : null,
+            total: typeof ev.total === 'number' ? ev.total : null,
+            meta: ev.meta || {},
+            createdAt: ev.createdAt || Date.now(),
+          })
+          existingEventIds.add(ev.id)
+        }
+      })
+    }
+
+    d.cloudMetrics = {
+      overview: cloudData.overview || (d.cloudMetrics && d.cloudMetrics.overview) || {},
+      popularBanks: Array.isArray(cloudData.popularBanks)
+        ? cloudData.popularBanks.filter((b) => b && b.title && !String(b.title).includes('??'))
+        : ((d.cloudMetrics && d.cloudMetrics.popularBanks) || []),
+      syncedAt: Date.now(),
+    }
+
+    saveDb()
+  },
+
+  /**
+   * 缓存与读取微信官方 DataCube 核心指标
+   */
+  saveWechatOfficialCache(wxOfficial) {
+    if (!wxOfficial || typeof wxOfficial !== 'object') return null
+    const d = loadDb()
+    d.wechatOfficialCache = {
+      ...wxOfficial,
+      cachedAt: Date.now(),
+    }
+    saveDb()
+    return d.wechatOfficialCache
+  },
+
+  getWechatOfficialCache() {
+    const d = loadDb()
+    return d.wechatOfficialCache && typeof d.wechatOfficialCache === 'object' ? d.wechatOfficialCache : null
   },
 
   /**
