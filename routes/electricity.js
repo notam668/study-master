@@ -106,16 +106,28 @@ router.post('/bind', optionalAuth, async (req, res) => {
     return res.status(400).json({ code: 400, message: '请选择宿舍楼栋与寝室账户（如 南校区 12号楼 125053kt）' })
   }
 
-  const userKey = resolveUserKey(req) || `dorm_${campus}_${cleanBuilding}_${cleanRoom}`
+  const officialDorm = electricityService.resolveOfficialDorm({
+    campus,
+    campusId,
+    building: cleanBuilding,
+    buildingId,
+    room: cleanRoom,
+    roomId,
+  })
+  if (!officialDorm) {
+    return res.status(400).json({ code: 400, message: '官方电费小程序中不存在该房间代码，请核对后重新选择' })
+  }
+
+  const userKey = resolveUserKey(req) || `dorm_${officialDorm.campus}_${officialDorm.building}_${officialDorm.room}`
   const openid = (req.user && req.user.openid) || req.headers['x-wx-openid'] || ''
 
   const patch = {
-    campus,
-    campusId: Number(campusId) || (campus.includes('南') ? 1 : 2),
-    building: cleanBuilding,
-    buildingId: Number(buildingId) || 0,
-    room: cleanRoom,
-    roomId: Number(roomId) || 0,
+    campus: officialDorm.campus,
+    campusId: officialDorm.campusId,
+    building: officialDorm.building,
+    buildingId: officialDorm.buildingId,
+    room: officialDorm.room,
+    roomId: officialDorm.roomId,
     meterId: String(meterId || '').trim(),
     alertEnabled: alertEnabled !== false,
     openid: openid || undefined,

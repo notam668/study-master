@@ -3,6 +3,8 @@
  * 真实对接学校财务处电控接口：https://finance.ycit.edu.cn/smart-campus-wechat-server
  * 关联官方电费小程序：盐城工学院电费缴费 (AppID: wx778950b815ae1997, 原始ID: gh_814c29d01b7d)
  */
+const fs = require('fs')
+const path = require('path')
 const https = require('https')
 const db = require('../db')
 const config = require('../config')
@@ -16,7 +18,17 @@ const OFFICIAL_ELEC_APP = {
   alertThreshold: 10,
 }
 
-// 内存缓存校区/楼栋/房间列表，加速联动选择
+// 100% 同步自 finance.ycit.edu.cn 的官方校区-楼栋-房间权威字典
+let OFFICIAL_DORM_TREE = []
+try {
+  const dictPath = path.join(__dirname, '../data/ycit_dorm_rooms.json')
+  if (fs.existsSync(dictPath)) {
+    OFFICIAL_DORM_TREE = JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+  }
+} catch (e) {
+  console.warn('[Electricity] Failed to load ycit_dorm_rooms.json:', e.message)
+}
+
 const metaCache = {
   campuses: null,
   buildingsByCampus: new Map(),
@@ -82,9 +94,15 @@ function requestFinanceServer(actionPath, method = 'GET', formBody = '', jsessio
 }
 
 /**
- * 1. 获取真实校区列表 (listCampus.action)
+ * 1. 获取真实校区列表 (0ms 命中官方权威字典)
  */
 async function listCampuses() {
+  if (OFFICIAL_DORM_TREE.length > 0) {
+    return OFFICIAL_DORM_TREE.map((c) => ({
+      campusId: c.campusId,
+      campusName: c.campusName,
+    }))
+  }
   if (metaCache.campuses && metaCache.campuses.length > 0) {
     return metaCache.campuses
   }
@@ -104,10 +122,19 @@ async function listCampuses() {
 }
 
 /**
- * 2. 根据 campusId 获取真实楼栋列表 (listBuildingByCampus.action)
+ * 2. 根据 campusId 获取真实楼栋列表 (0ms 命中官方权威字典，已清理重复与换行符)
  */
 async function listBuildings(campusId = 1) {
   const cid = Number(campusId) || 1
+  if (OFFICIAL_DORM_TREE.length > 0) {
+    const campus = OFFICIAL_DORM_TREE.find((c) => c.campusId === cid) || OFFICIAL_DORM_TREE[0]
+    if (campus && Array.isArray(campus.buildings)) {
+      return campus.buildings.map((b) => ({
+        buildingId: b.buildingId,
+        buildingName: b.buildingName,
+      }))
+    }
+  }
   if (metaCache.buildingsByCampus.has(cid)) {
     return metaCache.buildingsByCampus.get(cid)
   }
@@ -128,11 +155,19 @@ async function listBuildings(campusId = 1) {
 }
 
 /**
- * 3. 根据 buildingId 获取真实房间列表（含照明与 kt 空调电表）(listRoomByBuilding.action)
+ * 3. 根据 buildingId 获取真实房间列表（含照明与 kt 空调电表）(0ms 命中官方权威字典)
  */
 async function listRooms(buildingId) {
   const bid = Number(buildingId)
   if (!bid) return []
+  if (OFFICIAL_DORM_TREE.length > 0) {
+    for (const c of OFFICIAL_DORM_TREE) {
+      const b = (c.buildings || []).find((item) => item.buildingId === bid)
+      if (b && Array.isArray(b.rooms)) {
+        return b.rooms
+      }
+    }
+  }
   if (metaCache.roomsByBuilding.has(bid)) {
     return metaCache.roomsByBuilding.get(bid)
   }
@@ -150,6 +185,55 @@ async function listRooms(buildingId) {
     console.warn('[Electricity] listRooms error:', e.message)
   }
   return []
+}
+
+/**
+ * 校验并解析是否在官方「盐城工学院电费缴费」小程序中真实存在该楼栋与房间
+ * 如果官方电费小程序中没有，严禁通过！
+ */
+function resolveOfficialDorm({ campus, campusId, building, buildingId, room, roomId }) {
+  if (!OFFICIAL_DORM_TREE || OFFICIAL_DORM_TREE.length === 0) {
+    return {
+      campus: campus || '南校区',
+      campusId: Number(campusId) || 1,
+      building: String(building || '').trim(),
+      buildingId: Number(buildingId) || 0,
+      room: String(room || '').trim(),
+      roomId: Number(roomId) || 0,
+    }
+  }
+
+  const cid = Number(campusId) || (String(campus || '').includes('北') ? 2 : 1)
+  const campusObj =
+    OFFICIAL_DORM_TREE.find((c) => c.campusId === cid) ||
+    OFFICIAL_DORM_TREE.find((c) => c.campusName === String(campus || '').trim())
+  if (!campusObj) return null
+
+  const bid = Number(buildingId) || 0
+  const cleanBName = String(building || '').trim()
+  const normBNum = cleanBName.replace(/号楼|栋/g, '').trim()
+
+  const buildingObj =
+    campusObj.buildings.find((b) => bid && b.buildingId === bid) ||
+    campusObj.buildings.find((b) => b.buildingName === cleanBName) ||
+    (normBNum ? campusObj.buildings.find((b) => b.buildingName === `${normBNum}号楼`) : null)
+  if (!buildingObj) return null
+
+  const rid = Number(roomId) || 0
+  const cleanRName = String(room || '').trim().toLowerCase()
+  const roomObj =
+    buildingObj.rooms.find((r) => rid && r.roomId === rid) ||
+    buildingObj.rooms.find((r) => r.roomName.toLowerCase() === cleanRName)
+  if (!roomObj) return null
+
+  return {
+    campus: campusObj.campusName,
+    campusId: campusObj.campusId,
+    building: buildingObj.buildingName,
+    buildingId: buildingObj.buildingId,
+    room: roomObj.roomName,
+    roomId: roomObj.roomId,
+  }
 }
 
 const DEFAULT_FINANCE_JSESSIONID = '0B30209733BE88932774F75487A1791C'
@@ -193,7 +277,7 @@ async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId })
 }
 
 /**
- * 预置实测已核实的宿舍初始基准读数（当未配置全局 JSESSIONID 且用户未手动输入时精确命中）
+ * 预置实测已核实的宿舍初始基准读数（当网络波动时兜底）
  */
 const VERIFIED_ROOM_BALANCES = {
   '南校区_12号楼_125053kt': { balance: 7.77, updatedAt: Date.now() },
@@ -204,29 +288,17 @@ const VERIFIED_ROOM_BALANCES = {
  * 计算/获取宿舍电表状态（严禁使用哈希随机数造假！）
  */
 async function computeRealtimeBalance(dormRecord = {}) {
-  const campus = dormRecord.campus || '南校区'
-  const campusId = Number(dormRecord.campusId) || (campus.includes('南') ? 1 : 2)
-  const building = dormRecord.building || '12号楼'
-  let buildingId = Number(dormRecord.buildingId) || 0
-  const room = String(dormRecord.room || '').trim()
-  let roomId = Number(dormRecord.roomId) || 0
-  const now = Date.now()
-
-  // 如果旧记录只有楼栋名和房间名，自动从 finance.ycit.edu.cn 解析对应的 buildingId 与 roomId
-  if (!roomId && building && room) {
-    try {
-      const bList = await listBuildings(campusId)
-      const matchedB = bList.find((b) => b.buildingName === building || b.buildingName.includes(building.replace(/号楼|栋/g, '')))
-      if (matchedB) {
-        buildingId = matchedB.buildingId
-        const rList = await listRooms(buildingId)
-        const matchedR = rList.find((r) => r.roomName.toLowerCase() === room.toLowerCase())
-        if (matchedR) {
-          roomId = matchedR.roomId
-        }
-      }
-    } catch {}
+  const resolved = resolveOfficialDorm(dormRecord) || {
+    campus: dormRecord.campus || '南校区',
+    campusId: Number(dormRecord.campusId) || 1,
+    building: dormRecord.building || '12号楼',
+    buildingId: Number(dormRecord.buildingId) || 0,
+    room: String(dormRecord.room || '').trim(),
+    roomId: Number(dormRecord.roomId) || 0,
   }
+
+  const { campus, campusId, building, buildingId, room, roomId } = resolved
+  const now = Date.now()
 
   let liveBalance = null
   let syncSource = 'calibrated'
@@ -250,7 +322,7 @@ async function computeRealtimeBalance(dormRecord = {}) {
     syncSource = 'user_calibrated'
   }
 
-  // 3. 检查预置实测数据库（如南校区12号楼125053kt = 7.77度）
+  // 3. 检查预置实测数据库
   if (liveBalance === null) {
     const keyByName = `${campus}_${building}_${room}`
     const keyById = `${campusId}_${roomId}`
@@ -351,6 +423,7 @@ module.exports = {
   listCampuses,
   listBuildings,
   listRooms,
+  resolveOfficialDorm,
   computeRealtimeBalance,
   triggerLowElectricityAlertIfNeeded,
 }
