@@ -1,11 +1,12 @@
 /**
- * 盐城工学院宿舍电费实时查询与低电费 (< 10 度) 微信订阅消息预警服务
+ * 盐城工学院宿舍电费实时查询与低余额 (< 10 元) 微信订阅消息预警服务
  * 真实对接学校财务处电控接口：https://finance.ycit.edu.cn/smart-campus-wechat-server
  * 关联官方电费小程序：盐城工学院电费缴费 (AppID: wx778950b815ae1997, 原始ID: gh_814c29d01b7d)
  */
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
+const http = require('http')
 const db = require('../db')
 const config = require('../config')
 const wxApi = require('./wxApiService')
@@ -38,6 +39,51 @@ const metaCache = {
 /**
  * 调用盐城工学院财务处电控系统接口 https://finance.ycit.edu.cn/smart-campus-wechat-server
  */
+/**
+ * 隧道模式（2026-10-26 上线）：云托管容器在公网，直连 finance.ycit.edu.cn 不通，
+ * 由内网网关 43.142.152.33（EasyConnect 隧道）代为请求，本端只转发、不落盘票据。
+ */
+function requestViaBridge(actionPath, method, formBody, cleanCookie) {
+  return new Promise((resolve, reject) => {
+    let target
+    try {
+      target = new URL(process.env.ELEC_BRIDGE_BASE)
+    } catch (e) {
+      return reject(new Error('ELEC_BRIDGE_BASE 配置非法：' + process.env.ELEC_BRIDGE_BASE))
+    }
+    const payload = JSON.stringify({ u: actionPath, m: method || 'GET', b: formBody || '', sid: cleanCookie || '' })
+    const req = http.request(
+      {
+        hostname: target.hostname,
+        port: Number(target.port) || 80,
+        path: target.pathname || '/elec',
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+        timeout: 25000,
+      },
+      (res) => {
+        let raw = ''
+        res.setEncoding('utf8')
+        res.on('data', (c) => { raw += c })
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(raw))
+          } catch {
+            resolve({ returnCode: 'FAIL', raw: String(raw).slice(0, 300), via: 'bridge' })
+          }
+        })
+      }
+    )
+    req.on('error', reject)
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('电费隧道请求超时：' + (process.env.ELEC_BRIDGE_BASE || '')))
+    })
+    req.write(payload)
+    req.end()
+  })
+}
+
 function requestFinanceServer(actionPath, method = 'GET', formBody = '', jsessionId = '') {
   return new Promise((resolve, reject) => {
     const cleanCookie = String(jsessionId || '')
@@ -45,6 +91,11 @@ function requestFinanceServer(actionPath, method = 'GET', formBody = '', jsessio
       .replace(/^JSESSIONID\s*=\s*/i, '')
       .split(';')[0]
       .trim()
+
+    // 配了隧道就走内网网关（云托管生产环境），否则直连（本地/内网调试）
+    if (process.env.ELEC_BRIDGE_BASE) {
+      return requestViaBridge(actionPath, method, formBody, cleanCookie).then(resolve).catch(reject)
+    }
 
     const headers = {
       'content-type': 'application/x-www-form-urlencoded',
@@ -236,52 +287,260 @@ function resolveOfficialDorm({ campus, campusId, building, buildingId, room, roo
   }
 }
 
-const DEFAULT_FINANCE_JSESSIONID = '0B30209733BE88932774F75487A1791C'
+// ───────────────────────── 会话票管理（真实登录态，禁止硬编码死票） ─────────────────────────
+const SESSION_FILE = path.join(__dirname, '../data/elec-session.json')
 
-/**
- * 4. 通过 finance.ycit.edu.cn 查询指定寝室的实时剩余电量
- */
-async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId }) {
-  const reminderCfg = db.getReminderConfig() || {}
-  const activeSession =
-    jsessionId ||
-    reminderCfg.financeJsessionId ||
-    process.env.YCIT_FINANCE_JSESSIONID ||
-    DEFAULT_FINANCE_JSESSIONID
-  if (!activeSession || !campusId || !roomId) {
-    return null
-  }
-
+function loadSessionFromDisk() {
   try {
-    // 先切换到目标房间
-    await requestFinanceServer(
-      '/isims_room/configThisIsimsRoom.action',
-      'POST',
-      `isimsRoom.campusId=${encodeURIComponent(campusId)}&isimsRoom.roomId=${encodeURIComponent(roomId)}`,
-      activeSession
-    )
-    // 再拉取该房间的实时电量
-    const res = await requestFinanceServer('/isims_room/acquireThisIsimsRoom.action', 'GET', '', activeSession)
-    if (res && res.returnCode === 'SUCCESS' && res.remainElec !== undefined) {
-      return {
-        remainElec: Number(Number(res.remainElec).toFixed(2)),
-        isimsRoomName: res.isimsRoomName || '',
-        roomId: res.roomId || roomId,
-        campusId: res.campusId || campusId,
-      }
+    if (fs.existsSync(SESSION_FILE)) {
+      const j = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'))
+      if (j && j.jsessionId) return String(j.jsessionId).trim()
     }
   } catch (e) {
-    console.warn('[Electricity] fetchLiveRoomBalanceFromFinance failed:', e.message)
+    console.warn('[Electricity] 读取会话文件失败:', e.message)
   }
-  return null
+  return ''
+}
+
+let financeSession = String(process.env.YCIT_FINANCE_JSESSIONID || '').trim() || loadSessionFromDisk()
+let sessionSavedAt = Date.now()
+let sessionOkAt = 0
+let sessionFailAt = 0
+
+function cleanSessionId(sid) {
+  return String(sid || '')
+    .replace(/^Cookie:\s*/i, '')
+    .replace(/^JSESSIONID\s*=\s*/i, '')
+    .split(';')[0]
+    .trim()
+}
+
+/** 更新并落盘会话票（部署后容器重启也能读回） */
+function setSession(sid, source = 'manual') {
+  const clean = cleanSessionId(sid)
+  if (!clean) return false
+  financeSession = clean
+  sessionSavedAt = Date.now()
+  try {
+    fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true })
+    fs.writeFileSync(
+      SESSION_FILE,
+      JSON.stringify({ jsessionId: clean, updatedAt: Date.now(), source }, null, 1),
+      'utf8'
+    )
+  } catch (e) {
+    console.warn('[Electricity] 会话票落盘失败:', e.message)
+  }
+  console.log('[Electricity] 会话票已更新，来源:', source)
+  return true
+}
+
+function getSessionStatus() {
+  return {
+    hasSession: Boolean(financeSession),
+    sessionPrefix: financeSession ? financeSession.slice(0, 8) + '...' : '',
+    savedAt: sessionSavedAt,
+    lastOkAt: sessionOkAt,
+    lastFailAt: sessionFailAt,
+    alive: sessionOkAt > 0 && sessionOkAt > sessionFailAt,
+  }
+}
+
+// 串行队列：学校系统一个会话只有一个"当前绑定房间"，
+// 并发查不同房间会互相踩，必须串行。
+let financeChain = Promise.resolve()
+function enqueueFinance(task) {
+  const run = financeChain.then(task, task)
+  financeChain = run.then(
+    () => {},
+    () => {}
+  )
+  return run
+}
+
+// 测试可替换财务处传输层；生产路径始终走 requestFinanceServer（含隧道）。
+let financeTransport = requestFinanceServer
+
+function toRoomId(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0 || Math.floor(n) !== n) return null
+  return n
+}
+
+function readAcquireRoom(res) {
+  if (!res || typeof res !== 'object') return { roomId: null, campusId: null }
+  return {
+    roomId: toRoomId(res.roomId),
+    campusId: toRoomId(res.campusId),
+  }
 }
 
 /**
- * 预置实测已核实的宿舍初始基准读数（当网络波动时兜底）
+ * 请求房间与财务处 acquire 返回的当前房间必须是同一间。
+ * 官方字典里 roomId 跨校区会重复（南校区 12505 与北校区另一间都是 3253），
+ * 所以返回里带了 campusId 时也要一致。对不上、或缺 roomId，都不能采信余额。
  */
-const VERIFIED_ROOM_BALANCES = {
-  '南校区_12号楼_125053kt': { balance: 7.77, updatedAt: Date.now() },
-  '1_3256': { balance: 7.77, updatedAt: Date.now() },
+function isSameFinanceRoom(requestedCampusId, requestedRoomId, returnedCampusId, returnedRoomId) {
+  if (requestedRoomId == null || returnedRoomId == null) return false
+  if (requestedRoomId !== returnedRoomId) return false
+  if (requestedCampusId != null && returnedCampusId != null && requestedCampusId !== returnedCampusId) {
+    return false
+  }
+  return true
+}
+
+function mismatchResult(requestedCampusId, requestedRoomId, returnedCampusId, returnedRoomId) {
+  return {
+    errorCode: 'ROOM_MISMATCH',
+    requestedRoomId,
+    returnedRoomId,
+    requestedCampusId,
+    returnedCampusId,
+  }
+}
+
+function isTrustedLiveBalance(liveData, campusId, roomId) {
+  if (!liveData || liveData.errorCode) return false
+  if (typeof liveData.remainElec !== 'number' || Number.isNaN(liveData.remainElec)) return false
+  const requestedRoomId = toRoomId(liveData.requestedRoomId != null ? liveData.requestedRoomId : roomId)
+  const returnedRoomId = toRoomId(liveData.returnedRoomId != null ? liveData.returnedRoomId : liveData.roomId)
+  const requestedCampusId = toRoomId(
+    liveData.requestedCampusId != null ? liveData.requestedCampusId : campusId
+  )
+  const returnedCampusId = toRoomId(liveData.returnedCampusId)
+  return isSameFinanceRoom(requestedCampusId, requestedRoomId, returnedCampusId, returnedRoomId)
+}
+
+/**
+ * 共享会话被改到别的房间时，不能把那笔余额当成 finance_live 成功结果。
+ * 用户自己校准的余额（syncSource=user_calibrated）不受影响。
+ */
+function guardRoomMismatch(state) {
+  if (!state || typeof state !== 'object') return state
+  const next = { ...state, unit: '元' }
+  if (next.errorCode !== 'ROOM_MISMATCH' || next.syncSource !== 'finance_live') return next
+  return {
+    ...next,
+    balance: null,
+    balanceText: '--',
+    hasValidBalance: false,
+    isLowBalance: false,
+    syncSource: 'room_mismatch',
+    statusText: '房间不一致，未采用实时余额',
+    statusLevel: 'unknown',
+    unit: '元',
+  }
+}
+
+/**
+ * 4. 通过 finance.ycit.edu.cn 查询指定寝室的实时剩余金额（串行执行）
+ *    先 config 到目标房间再 acquire。返回房间与请求房间不一致时，
+ *    在同一串行段内重试一次（重新 config + acquire）；仍然不一致则
+ *    ROOM_MISMATCH，响应只带 requestedRoomId / returnedRoomId，不带余额。
+ */
+async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId }) {
+  if (jsessionId) setSession(jsessionId, 'caller')
+  if (!financeSession || !campusId || !roomId) return null
+
+  return enqueueFinance(async () => {
+    try {
+      const requestedRoomId = toRoomId(roomId)
+      const requestedCampusId = toRoomId(campusId)
+      let mismatch = null
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const bind = await financeTransport(
+          '/isims_room/configThisIsimsRoom.action',
+          'POST',
+          `isimsRoom.campusId=${encodeURIComponent(campusId)}&isimsRoom.roomId=${encodeURIComponent(roomId)}`,
+          financeSession
+        )
+        if (bind && bind.errorCode === 'NOT_LOGIN') {
+          sessionFailAt = Date.now()
+          return null
+        }
+
+        const res = await financeTransport('/isims_room/acquireThisIsimsRoom.action', 'GET', '', financeSession)
+        if (res && res.errorCode === 'NOT_LOGIN') {
+          sessionFailAt = Date.now()
+          return null
+        }
+
+        const looksLive =
+          res && res.returnCode === 'SUCCESS' && res.remainElec !== undefined && res.remainElec !== null && res.remainElec !== ''
+        if (!looksLive) {
+          return mismatch || null
+        }
+
+        const returned = readAcquireRoom(res)
+        if (!isSameFinanceRoom(requestedCampusId, requestedRoomId, returned.campusId, returned.roomId)) {
+          mismatch = mismatchResult(requestedCampusId, requestedRoomId, returned.campusId, returned.roomId)
+          console.warn(
+            '[Electricity] ROOM_MISMATCH requestedRoom=%s returnedRoom=%s requestedCampus=%s returnedCampus=%s attempt=%s',
+            requestedRoomId,
+            returned.roomId,
+            requestedCampusId,
+            returned.campusId,
+            attempt
+          )
+          continue
+        }
+
+        const amount = Number(res.remainElec)
+        if (!Number.isFinite(amount)) return mismatch || null
+
+        sessionOkAt = Date.now()
+        return {
+          remainElec: Number(amount.toFixed(2)),
+          isimsRoomName: res.isimsRoomName || '',
+          roomId: returned.roomId,
+          campusId: returned.campusId || requestedCampusId,
+          requestedRoomId,
+          returnedRoomId: returned.roomId,
+          requestedCampusId,
+          returnedCampusId: returned.campusId,
+        }
+      }
+
+      return mismatch
+    } catch (e) {
+      console.warn('[Electricity] fetchLiveRoomBalanceFromFinance failed:', e.message)
+    }
+    return null
+  })
+}
+
+/**
+ * 5. 会话保活：每 10 分钟打一次需登录接口，让学校 Session 不过期
+ *    死票无法复活，只能从官方小程序重新抓；此函数保证活票一直活。
+ */
+async function keepaliveOnce() {
+  if (!financeSession) return false
+  try {
+    const res = await requestFinanceServer('/wechat_user/acquireThisWechatUser.action', 'GET', '', financeSession)
+    if (res && res.returnCode === 'SUCCESS') {
+      sessionOkAt = Date.now()
+      return true
+    }
+    sessionFailAt = Date.now()
+    return false
+  } catch (e) {
+    sessionFailAt = Date.now()
+    return false
+  }
+}
+
+let keepaliveTimer = null
+function startSessionKeepalive(intervalMs = 10 * 60 * 1000) {
+  if (keepaliveTimer) return keepaliveTimer
+  const tick = () => {
+    keepaliveOnce().catch(() => {})
+  }
+  tick()
+  keepaliveTimer = setInterval(tick, intervalMs)
+  if (keepaliveTimer.unref) keepaliveTimer.unref()
+  console.log('[Electricity] 电费会话保活已启动，间隔', Math.round(intervalMs / 60000), '分钟')
+  return keepaliveTimer
 }
 
 /**
@@ -302,17 +561,32 @@ async function computeRealtimeBalance(dormRecord = {}) {
 
   let liveBalance = null
   let syncSource = 'calibrated'
+  let liveRoomCheck = null
 
-  // 1. 优先尝试从 finance.ycit.edu.cn 实时拉取
+  // 1. 优先尝试从 finance.ycit.edu.cn 实时拉取。房间不一致时不得把别人的余额标成 finance_live。
   if (campusId && roomId) {
     const liveData = await fetchLiveRoomBalanceFromFinance({
       campusId,
       roomId,
       jsessionId: dormRecord.financeJsessionId,
     })
-    if (liveData && typeof liveData.remainElec === 'number' && !isNaN(liveData.remainElec)) {
+    if (liveData && liveData.errorCode === 'ROOM_MISMATCH') {
+      liveRoomCheck = {
+        errorCode: 'ROOM_MISMATCH',
+        requestedRoomId: liveData.requestedRoomId,
+        returnedRoomId: liveData.returnedRoomId,
+        requestedCampusId: liveData.requestedCampusId,
+        returnedCampusId: liveData.returnedCampusId,
+      }
+    } else if (isTrustedLiveBalance(liveData, campusId, roomId)) {
       liveBalance = liveData.remainElec
       syncSource = 'finance_live'
+      liveRoomCheck = {
+        requestedRoomId: liveData.requestedRoomId,
+        returnedRoomId: liveData.returnedRoomId,
+        requestedCampusId: liveData.requestedCampusId,
+        returnedCampusId: liveData.returnedCampusId,
+      }
     }
   }
 
@@ -322,17 +596,6 @@ async function computeRealtimeBalance(dormRecord = {}) {
     syncSource = 'user_calibrated'
   }
 
-  // 3. 检查预置实测数据库
-  if (liveBalance === null) {
-    const keyByName = `${campus}_${building}_${room}`
-    const keyById = `${campusId}_${roomId}`
-    const verified = VERIFIED_ROOM_BALANCES[keyByName] || VERIFIED_ROOM_BALANCES[keyById]
-    if (verified) {
-      liveBalance = verified.balance
-      syncSource = 'verified_snapshot'
-    }
-  }
-
   const hasValidBalance = typeof liveBalance === 'number' && !isNaN(liveBalance)
   const currentBalance = hasValidBalance ? liveBalance : null
   const balanceText = hasValidBalance ? liveBalance.toFixed(2) : '--'
@@ -340,7 +603,7 @@ async function computeRealtimeBalance(dormRecord = {}) {
 
   const fullAccountName = `${campus}${building}${room}`
 
-  return {
+  return guardRoomMismatch({
     campus,
     campusId,
     building,
@@ -353,21 +616,35 @@ async function computeRealtimeBalance(dormRecord = {}) {
     balanceText,
     hasValidBalance,
     syncSource,
-    unit: '度',
+    unit: '元',
     alertThreshold: OFFICIAL_ELEC_APP.alertThreshold,
     isLowBalance: isLow,
-    statusText: !hasValidBalance
-      ? '待同步当前电量'
-      : isLow
-      ? `剩余 ${currentBalance} 度 · 低于10度预警`
-      : currentBalance < 25
-      ? '电量偏低 · 建议留意'
-      : '电量充足 · <10度自动提醒',
+    statusText:
+      liveRoomCheck && liveRoomCheck.errorCode === 'ROOM_MISMATCH' && !hasValidBalance
+        ? '房间不一致，未采用实时余额'
+        : !hasValidBalance
+        ? '待同步当前电量'
+        : isLow
+        ? `剩余 ${currentBalance} 元 · 低于${OFFICIAL_ELEC_APP.alertThreshold}元预警`
+        : currentBalance < 25
+        ? '余额偏低 · 建议留意'
+        : `余额充足 · 低于${OFFICIAL_ELEC_APP.alertThreshold}元自动提醒`,
     statusLevel: !hasValidBalance ? 'unknown' : isLow ? 'danger' : currentBalance < 25 ? 'warning' : 'normal',
     alertEnabled: dormRecord.alertEnabled !== false,
     lastCheckedAt: now,
     officialMiniApp: OFFICIAL_ELEC_APP,
-  }
+    ...(liveRoomCheck && liveRoomCheck.errorCode ? { errorCode: liveRoomCheck.errorCode } : {}),
+    ...(liveRoomCheck
+      ? {
+          requestedRoomId: liveRoomCheck.requestedRoomId,
+          returnedRoomId: liveRoomCheck.returnedRoomId,
+          ...(liveRoomCheck.requestedCampusId != null
+            ? { requestedCampusId: liveRoomCheck.requestedCampusId }
+            : {}),
+          ...(liveRoomCheck.returnedCampusId != null ? { returnedCampusId: liveRoomCheck.returnedCampusId } : {}),
+        }
+      : {}),
+  })
 }
 
 /**
@@ -405,7 +682,7 @@ async function triggerLowElectricityAlertIfNeeded(openid, dormState) {
       data: {
         thing1: { value: `电费预警：${roomLabel}`.slice(0, 20) },
         time3: { value: nowStr },
-        thing2: { value: `剩余电量${dormState.balance}度，已低于10度`.slice(0, 20) },
+        thing2: { value: `剩余电费${dormState.balance}元，即将用完`.slice(0, 20) },
       },
     })
     if (sendRes && sendRes.ok) {
@@ -418,6 +695,16 @@ async function triggerLowElectricityAlertIfNeeded(openid, dormState) {
   }
 }
 
+function __setFinanceTransportForTest(fn) {
+  financeTransport = typeof fn === 'function' ? fn : requestFinanceServer
+}
+
+function __setFinanceSessionForTest(sid) {
+  financeSession = cleanSessionId(sid)
+  sessionOkAt = 0
+  sessionFailAt = 0
+}
+
 module.exports = {
   OFFICIAL_ELEC_APP,
   listCampuses,
@@ -425,5 +712,13 @@ module.exports = {
   listRooms,
   resolveOfficialDorm,
   computeRealtimeBalance,
+  fetchLiveRoomBalanceFromFinance,
+  guardRoomMismatch,
   triggerLowElectricityAlertIfNeeded,
+  setSession,
+  getSessionStatus,
+  keepaliveOnce,
+  startSessionKeepalive,
+  __setFinanceTransportForTest,
+  __setFinanceSessionForTest,
 }

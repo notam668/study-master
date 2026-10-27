@@ -17,6 +17,25 @@ function resolveUserKey(req) {
 }
 
 /**
+ * status / bind 共用：ROOM_MISMATCH 时丢掉被改房间的余额，并带上请求房间与返回房间。
+ */
+function presentDorm(state, extra = {}) {
+  const dorm = electricityService.guardRoomMismatch(state) || {}
+  const data = {
+    bound: true,
+    ...extra,
+    dorm,
+    officialMiniApp: electricityService.OFFICIAL_ELEC_APP,
+  }
+  if (dorm.errorCode === 'ROOM_MISMATCH' || dorm.requestedRoomId != null) {
+    data.requestedRoomId = dorm.requestedRoomId
+    data.returnedRoomId = dorm.returnedRoomId == null ? null : dorm.returnedRoomId
+  }
+  if (dorm.errorCode) data.errorCode = dorm.errorCode
+  return data
+}
+
+/**
  * 级联查询盐城工学院官方电控系统 (finance.ycit.edu.cn) 的真实校区 / 楼栋 / 房间列表
  * GET /api/electricity/rooms-meta?campusId=1&buildingId=303
  */
@@ -64,21 +83,17 @@ router.get('/status', optionalAuth, async (req, res) => {
     })
   }
 
-  const state = await electricityService.computeRealtimeBalance(record)
+  const state = electricityService.guardRoomMismatch(await electricityService.computeRealtimeBalance(record))
 
-  // 当余额低于 10 度且存在有效微信 openid 时，自动触发低电费微信服务通知
+  // 低于 10 元才提醒。房间不一致时 guard 已清掉外来余额，不会拿别人的低余额去推送。
   const openid = (req.user && req.user.openid) || req.headers['x-wx-openid'] || record.openid || ''
-  if (state.isLowBalance && openid && !openid.startsWith('mock_')) {
+  if (state.isLowBalance && state.syncSource !== 'room_mismatch' && openid && !openid.startsWith('mock_')) {
     electricityService.triggerLowElectricityAlertIfNeeded(openid, state).catch(() => {})
   }
 
   return res.json({
     code: 0,
-    data: {
-      bound: true,
-      dorm: state,
-      officialMiniApp: electricityService.OFFICIAL_ELEC_APP,
-    },
+    data: presentDorm(state),
   })
 })
 
@@ -141,7 +156,7 @@ router.post('/bind', optionalAuth, async (req, res) => {
     patch.baseBalance = Math.max(0, Number(calibratedBalance))
     patch.baseUpdatedAt = Date.now()
   } else {
-    // 切换寝室时如未传校准值，清除旧寝室残留的 baseBalance，以使用真实网关或预置快照
+    // 切换寝室时如未传校准值，清除旧寝室残留的 baseBalance，避免把上一间的余额套到新房间
     const existing = db.getUserDorm(userKey)
     if (existing && (existing.room !== cleanRoom || existing.building !== cleanBuilding || existing.campus !== campus)) {
       patch.baseBalance = null
@@ -150,22 +165,17 @@ router.post('/bind', optionalAuth, async (req, res) => {
   }
 
   const saved = db.saveUserDorm(userKey, patch)
-  const state = await electricityService.computeRealtimeBalance(saved)
+  const state = electricityService.guardRoomMismatch(await electricityService.computeRealtimeBalance(saved))
 
   let alertResult = null
-  if (state.isLowBalance && openid && !openid.startsWith('mock_')) {
+  if (state.isLowBalance && state.syncSource !== 'room_mismatch' && openid && !openid.startsWith('mock_')) {
     alertResult = await electricityService.triggerLowElectricityAlertIfNeeded(openid, state).catch(() => null)
   }
 
   return res.json({
     code: 0,
     message: '宿舍电表账户已更新',
-    data: {
-      bound: true,
-      dorm: state,
-      alertResult,
-      officialMiniApp: electricityService.OFFICIAL_ELEC_APP,
-    },
+    data: presentDorm(state, { alertResult }),
   })
 })
 
