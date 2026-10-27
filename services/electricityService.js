@@ -287,8 +287,15 @@ function resolveOfficialDorm({ campus, campusId, building, buildingId, room, roo
   }
 }
 
-// ───────────────────────── 会话票管理（真实登录态，禁止硬编码死票） ─────────────────────────
+// ───────────────────────── 会话票管理（按用户隔离，共享票只做兜底） ─────────────────────────
+// 学校财务处一个 JSESSIONID 只有一个「当前房间」。以前全进程共用一张票，
+// 用户 A 的查房会把用户 B 的会话改到别的房间。现在：
+//   1. 每个 userKey（微信 openid）单独保存自己的票，内存 + 可选落盘；
+//   2. 同一张票上的请求串行，不同票并行；
+//   3. 该用户还没有自己的票时，才短时借用进程级共享票（环境变量或 elec-session.json）。
+// 仓库里没有财务处登录换票流程，票据仍由环境变量、落盘文件或调用方传入，不在这里爬登录页。
 const SESSION_FILE = path.join(__dirname, '../data/elec-session.json')
+const USER_SESSION_FILE = path.join(__dirname, '../data/elec-user-sessions.json')
 
 function loadSessionFromDisk() {
   try {
@@ -307,15 +314,31 @@ let sessionSavedAt = Date.now()
 let sessionOkAt = 0
 let sessionFailAt = 0
 
+// userKey -> { jsessionId, savedAt, okAt, failAt, source }
+const userSessions = new Map()
+let userSessionFilePath = USER_SESSION_FILE
+let userSessionsDiskEnabled = true
+
 function cleanSessionId(sid) {
-  return String(sid || '')
+  const clean = String(sid || '')
     .replace(/^Cookie:\s*/i, '')
     .replace(/^JSESSIONID\s*=\s*/i, '')
     .split(';')[0]
     .trim()
+  if (!clean || clean.length > 512) return ''
+  return clean
 }
 
-/** 更新并落盘会话票（部署后容器重启也能读回） */
+function sessionPrefix(sid) {
+  const clean = cleanSessionId(sid)
+  return clean ? clean.slice(0, 8) + '...' : ''
+}
+
+function normalizeUserKey(userKey) {
+  return String(userKey || '').trim()
+}
+
+/** 更新并落盘共享兜底票。不会改写任何用户自己的票。 */
 function setSession(sid, source = 'manual') {
   const clean = cleanSessionId(sid)
   if (!clean) return false
@@ -331,32 +354,171 @@ function setSession(sid, source = 'manual') {
   } catch (e) {
     console.warn('[Electricity] 会话票落盘失败:', e.message)
   }
-  console.log('[Electricity] 会话票已更新，来源:', source)
+  console.log('[Electricity] 共享兜底会话票已更新，来源:', source)
   return true
+}
+
+function loadUserSessionsFromDisk() {
+  if (!userSessionsDiskEnabled || !userSessionFilePath) return
+  try {
+    if (!fs.existsSync(userSessionFilePath)) return
+    const j = JSON.parse(fs.readFileSync(userSessionFilePath, 'utf8'))
+    const users = j && j.users && typeof j.users === 'object' ? j.users : null
+    if (!users) return
+    for (const [key, row] of Object.entries(users)) {
+      const userKey = normalizeUserKey(key)
+      const sid = cleanSessionId(row && row.jsessionId)
+      if (!userKey || !sid) continue
+      const savedAt = Number(row.updatedAt) || Date.now()
+      const prev = userSessions.get(userKey)
+      if (prev && prev.savedAt > savedAt) continue
+      userSessions.set(userKey, {
+        jsessionId: sid,
+        savedAt,
+        okAt: prev && prev.jsessionId === sid ? prev.okAt : 0,
+        failAt: prev && prev.jsessionId === sid ? prev.failAt : 0,
+        source: (row && row.source) || 'disk',
+      })
+    }
+  } catch (e) {
+    console.warn('[Electricity] 读取用户会话文件失败:', e.message)
+  }
+}
+
+function persistUserSessions() {
+  if (!userSessionsDiskEnabled || !userSessionFilePath) return
+  const users = {}
+  for (const [key, row] of userSessions) {
+    if (!row || !row.jsessionId) continue
+    users[key] = {
+      jsessionId: row.jsessionId,
+      updatedAt: row.savedAt || Date.now(),
+      source: row.source || 'manual',
+    }
+  }
+  const payload = JSON.stringify({ users }, null, 1)
+  try {
+    fs.mkdirSync(path.dirname(userSessionFilePath), { recursive: true })
+    const tmp = `${userSessionFilePath}.tmp`
+    fs.writeFileSync(tmp, payload, 'utf8')
+    fs.renameSync(tmp, userSessionFilePath)
+  } catch (e) {
+    console.warn('[Electricity] 用户会话票落盘失败:', e.message)
+  }
+}
+
+/**
+ * 保存某个 userKey 自己的财务处会话票。不写入共享兜底票，也不改其他用户。
+ */
+function setUserSession(userKey, sid, source = 'manual') {
+  const key = normalizeUserKey(userKey)
+  const clean = cleanSessionId(sid)
+  if (!key || !clean) return false
+  const prev = userSessions.get(key)
+  userSessions.set(key, {
+    jsessionId: clean,
+    savedAt: Date.now(),
+    okAt: prev && prev.jsessionId === clean ? prev.okAt : 0,
+    failAt: prev && prev.jsessionId === clean ? prev.failAt : 0,
+    source: source || 'manual',
+  })
+  persistUserSessions()
+  console.log('[Electricity] 用户会话票已更新，userKey 前缀:', key.slice(0, 6), '来源:', source || 'manual')
+  return true
+}
+
+function getStoredUserSession(userKey) {
+  const key = normalizeUserKey(userKey)
+  if (!key) return null
+  if (userSessions.has(key)) return userSessions.get(key)
+  loadUserSessionsFromDisk()
+  return userSessions.get(key) || null
+}
+
+/** 读取某个用户的会话。服务端内部可看全票；对外接口只应返回 sessionPrefix。 */
+function getUserSession(userKey) {
+  const key = normalizeUserKey(userKey)
+  const row = getStoredUserSession(key)
+  if (!row || !row.jsessionId) return null
+  return {
+    userKey: key,
+    jsessionId: row.jsessionId,
+    sessionPrefix: sessionPrefix(row.jsessionId),
+    savedAt: row.savedAt || 0,
+    lastOkAt: row.okAt || 0,
+    lastFailAt: row.failAt || 0,
+    source: row.source || '',
+  }
 }
 
 function getSessionStatus() {
   return {
     hasSession: Boolean(financeSession),
-    sessionPrefix: financeSession ? financeSession.slice(0, 8) + '...' : '',
+    sessionPrefix: sessionPrefix(financeSession),
     savedAt: sessionSavedAt,
     lastOkAt: sessionOkAt,
     lastFailAt: sessionFailAt,
     alive: sessionOkAt > 0 && sessionOkAt > sessionFailAt,
+    scope: 'shared',
   }
 }
 
-// 串行队列：学校系统一个会话只有一个"当前绑定房间"，
-// 并发查不同房间会互相踩，必须串行。
-let financeChain = Promise.resolve()
-function enqueueFinance(task) {
-  const run = financeChain.then(task, task)
-  financeChain = run.then(
+/**
+ * 选本次查询用的票：
+ *   用户自己的票 > 本次显式传入（并记到该用户）> 共享兜底票。
+ * 没有用户票时不会把共享票抄进该用户的档案。
+ */
+function resolveFinanceTicket({ userKey, jsessionId } = {}) {
+  const key = normalizeUserKey(userKey)
+  if (key) {
+    const row = getStoredUserSession(key)
+    if (row && row.jsessionId) {
+      return { ticket: row.jsessionId, scope: 'user', userKey: key }
+    }
+  }
+  const explicit = cleanSessionId(jsessionId)
+  if (explicit) {
+    if (key) setUserSession(key, explicit, 'caller')
+    return { ticket: explicit, scope: key ? 'user' : 'explicit', userKey: key }
+  }
+  if (financeSession) return { ticket: financeSession, scope: 'shared', userKey: key }
+  return { ticket: '', scope: 'none', userKey: key }
+}
+
+function markTicketResult(ticket, ok) {
+  const clean = cleanSessionId(ticket)
+  if (!clean) return
+  const now = Date.now()
+  if (clean === financeSession) {
+    if (ok) sessionOkAt = now
+    else sessionFailAt = now
+  }
+  for (const row of userSessions.values()) {
+    if (row && row.jsessionId === clean) {
+      if (ok) row.okAt = now
+      else row.failAt = now
+    }
+  }
+}
+
+// 同一张票串行（学校会话只有一个当前房间），不同票互不等待。
+const ticketChains = new Map()
+function enqueueForTicket(ticket, task) {
+  const key = cleanSessionId(ticket) || '__none__'
+  const prev = ticketChains.get(key) || Promise.resolve()
+  const run = prev.then(task, task)
+  const settled = run.then(
     () => {},
     () => {}
   )
+  ticketChains.set(key, settled)
+  settled.then(() => {
+    if (ticketChains.get(key) === settled) ticketChains.delete(key)
+  })
   return run
 }
+
+loadUserSessionsFromDisk()
 
 // 测试可替换财务处传输层；生产路径始终走 requestFinanceServer（含隧道）。
 let financeTransport = requestFinanceServer
@@ -433,16 +595,16 @@ function guardRoomMismatch(state) {
 }
 
 /**
- * 4. 通过 finance.ycit.edu.cn 查询指定寝室的实时剩余金额（串行执行）
- *    先 config 到目标房间再 acquire。返回房间与请求房间不一致时，
- *    在同一串行段内重试一次（重新 config + acquire）；仍然不一致则
- *    ROOM_MISMATCH，响应只带 requestedRoomId / returnedRoomId，不带余额。
+ * 4. 通过 finance.ycit.edu.cn 查询指定寝室的实时剩余金额。
+ *    同一张会话票串行，不同用户的票并行。先 config 到目标房间再 acquire。
+ *    返回房间与请求房间不一致时，在同一串行段内重试一次（重新 config + acquire）；
+ *    仍然不一致则 ROOM_MISMATCH，响应只带 requestedRoomId / returnedRoomId，不带余额。
  */
-async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId }) {
-  if (jsessionId) setSession(jsessionId, 'caller')
-  if (!financeSession || !campusId || !roomId) return null
+async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId, userKey } = {}) {
+  const resolved = resolveFinanceTicket({ userKey, jsessionId })
+  if (!resolved.ticket || !campusId || !roomId) return null
 
-  return enqueueFinance(async () => {
+  return enqueueForTicket(resolved.ticket, async () => {
     try {
       const requestedRoomId = toRoomId(roomId)
       const requestedCampusId = toRoomId(campusId)
@@ -453,16 +615,16 @@ async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId })
           '/isims_room/configThisIsimsRoom.action',
           'POST',
           `isimsRoom.campusId=${encodeURIComponent(campusId)}&isimsRoom.roomId=${encodeURIComponent(roomId)}`,
-          financeSession
+          resolved.ticket
         )
         if (bind && bind.errorCode === 'NOT_LOGIN') {
-          sessionFailAt = Date.now()
+          markTicketResult(resolved.ticket, false)
           return null
         }
 
-        const res = await financeTransport('/isims_room/acquireThisIsimsRoom.action', 'GET', '', financeSession)
+        const res = await financeTransport('/isims_room/acquireThisIsimsRoom.action', 'GET', '', resolved.ticket)
         if (res && res.errorCode === 'NOT_LOGIN') {
-          sessionFailAt = Date.now()
+          markTicketResult(resolved.ticket, false)
           return null
         }
 
@@ -476,12 +638,13 @@ async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId })
         if (!isSameFinanceRoom(requestedCampusId, requestedRoomId, returned.campusId, returned.roomId)) {
           mismatch = mismatchResult(requestedCampusId, requestedRoomId, returned.campusId, returned.roomId)
           console.warn(
-            '[Electricity] ROOM_MISMATCH requestedRoom=%s returnedRoom=%s requestedCampus=%s returnedCampus=%s attempt=%s',
+            '[Electricity] ROOM_MISMATCH requestedRoom=%s returnedRoom=%s requestedCampus=%s returnedCampus=%s attempt=%s user=%s',
             requestedRoomId,
             returned.roomId,
             requestedCampusId,
             returned.campusId,
-            attempt
+            attempt,
+            resolved.userKey || '-'
           )
           continue
         }
@@ -489,7 +652,7 @@ async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId })
         const amount = Number(res.remainElec)
         if (!Number.isFinite(amount)) return mismatch || null
 
-        sessionOkAt = Date.now()
+        markTicketResult(resolved.ticket, true)
         return {
           remainElec: Number(amount.toFixed(2)),
           isimsRoomName: res.isimsRoomName || '',
@@ -514,20 +677,39 @@ async function fetchLiveRoomBalanceFromFinance({ campusId, roomId, jsessionId })
  * 5. 会话保活：每 10 分钟打一次需登录接口，让学校 Session 不过期
  *    死票无法复活，只能从官方小程序重新抓；此函数保证活票一直活。
  */
-async function keepaliveOnce() {
-  if (!financeSession) return false
-  try {
-    const res = await requestFinanceServer('/wechat_user/acquireThisWechatUser.action', 'GET', '', financeSession)
-    if (res && res.returnCode === 'SUCCESS') {
-      sessionOkAt = Date.now()
-      return true
-    }
-    sessionFailAt = Date.now()
-    return false
-  } catch (e) {
-    sessionFailAt = Date.now()
-    return false
+function collectKeepaliveTickets() {
+  const jobs = []
+  const seen = new Set()
+  const push = (ticket) => {
+    const clean = cleanSessionId(ticket)
+    if (!clean || seen.has(clean)) return
+    seen.add(clean)
+    jobs.push(clean)
   }
+  push(financeSession)
+  for (const row of userSessions.values()) push(row && row.jsessionId)
+  return jobs
+}
+
+async function keepaliveOnce() {
+  const tickets = collectKeepaliveTickets()
+  if (tickets.length === 0) return false
+  let anyOk = false
+  for (const ticket of tickets) {
+    const ok = await enqueueForTicket(ticket, async () => {
+      try {
+        const res = await requestFinanceServer('/wechat_user/acquireThisWechatUser.action', 'GET', '', ticket)
+        const success = Boolean(res && res.returnCode === 'SUCCESS')
+        markTicketResult(ticket, success)
+        return success
+      } catch (e) {
+        markTicketResult(ticket, false)
+        return false
+      }
+    })
+    if (ok) anyOk = true
+  }
+  return anyOk
 }
 
 let keepaliveTimer = null
@@ -563,12 +745,14 @@ async function computeRealtimeBalance(dormRecord = {}) {
   let syncSource = 'calibrated'
   let liveRoomCheck = null
 
-  // 1. 优先尝试从 finance.ycit.edu.cn 实时拉取。房间不一致时不得把别人的余额标成 finance_live。
+  // 1. 优先尝试从 finance.ycit.edu.cn 实时拉取。有该用户自己的票就用自己的，否则才用共享兜底票。
+  //    房间不一致时不得把别人的余额标成 finance_live。
   if (campusId && roomId) {
     const liveData = await fetchLiveRoomBalanceFromFinance({
       campusId,
       roomId,
       jsessionId: dormRecord.financeJsessionId,
+      userKey: dormRecord.userKey,
     })
     if (liveData && liveData.errorCode === 'ROOM_MISMATCH') {
       liveRoomCheck = {
@@ -705,6 +889,18 @@ function __setFinanceSessionForTest(sid) {
   sessionFailAt = 0
 }
 
+function __resetUserSessionsForTest() {
+  userSessions.clear()
+  userSessionsDiskEnabled = false
+}
+
+function __setUserSessionFileForTest(filePath) {
+  userSessions.clear()
+  userSessionFilePath = filePath || ''
+  userSessionsDiskEnabled = Boolean(filePath)
+  if (filePath) loadUserSessionsFromDisk()
+}
+
 module.exports = {
   OFFICIAL_ELEC_APP,
   listCampuses,
@@ -716,9 +912,13 @@ module.exports = {
   guardRoomMismatch,
   triggerLowElectricityAlertIfNeeded,
   setSession,
+  setUserSession,
+  getUserSession,
   getSessionStatus,
   keepaliveOnce,
   startSessionKeepalive,
   __setFinanceTransportForTest,
   __setFinanceSessionForTest,
+  __resetUserSessionsForTest,
+  __setUserSessionFileForTest,
 }

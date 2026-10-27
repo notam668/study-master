@@ -5,3 +5,5 @@ node_modules/
 
 data/backups/
 data/elec-session.json
+data/elec-user-sessions.json
+data/elec-user-sessions.json.tmp
