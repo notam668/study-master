@@ -5,15 +5,20 @@ const { optionalAuth } = require('../middleware/auth')
 const electricityService = require('../services/electricityService')
 
 function resolveUserKey(req) {
+  let key = ''
   if (req.user) {
-    return req.user.openid || req.user.id || req.user.studentId || ''
+    key = req.user.openid || req.user.id || req.user.studentId || ''
+  } else {
+    key =
+      req.headers['x-wx-openid'] ||
+      (req.query && req.query.userKey) ||
+      (req.body && req.body.userKey) ||
+      ''
   }
-  return (
-    req.headers['x-wx-openid'] ||
-    (req.query && req.query.userKey) ||
-    (req.body && req.body.userKey) ||
-    ''
-  )
+  key = String(key || '').trim()
+  // 旧逻辑在没有用户标识时会落到 dorm_校区_楼栋_房间，同寝室的人会共用一条档案。
+  if (!key || key.startsWith('dorm_')) return ''
+  return key
 }
 
 /** 对外只暴露票的前 8 位，避免把 JSESSIONID 写进接口响应。 */
@@ -186,7 +191,13 @@ router.post('/bind', optionalAuth, async (req, res) => {
     return res.status(400).json({ code: 400, message: '官方电费小程序中不存在该房间代码，请核对后重新选择' })
   }
 
-  const userKey = resolveUserKey(req) || `dorm_${officialDorm.campus}_${officialDorm.building}_${officialDorm.room}`
+  const userKey = resolveUserKey(req)
+  if (!userKey) {
+    return res.status(400).json({
+      code: 400,
+      message: '缺少用户标识，电费宿舍必须按本人账号绑定，不能按房间共用',
+    })
+  }
   const openid = (req.user && req.user.openid) || req.headers['x-wx-openid'] || ''
 
   const patch = {

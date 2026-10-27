@@ -10,13 +10,6 @@ function authMiddleware(req, res, next) {
   // 1. 优先通过 Token 校验 JWT
   if (token) {
     try {
-      if (token.startsWith('mock_token_') || token.startsWith('local_token_')) {
-        const users = db.getAllUsers()
-        if (users.length > 0) {
-          req.user = users[users.length - 1]
-          return next()
-        }
-      }
       const decoded = jwt.verify(token, config.jwtSecret)
       const user = db.getUserById(decoded.userId) || (decoded.openid ? db.getUserByOpenid(decoded.openid) : null)
       if (user) {
@@ -60,14 +53,9 @@ function optionalAuth(req, res, next) {
 
   if (token) {
     try {
-      if (token.startsWith('mock_token_') || token.startsWith('local_token_')) {
-        const users = db.getAllUsers()
-        if (users.length > 0) req.user = users[users.length - 1]
-      } else {
-        const decoded = jwt.verify(token, config.jwtSecret)
-        const user = db.getUserById(decoded.userId) || (decoded.openid ? db.getUserByOpenid(decoded.openid) : null)
-        if (user) req.user = user
-      }
+      const decoded = jwt.verify(token, config.jwtSecret)
+      const user = db.getUserById(decoded.userId) || (decoded.openid ? db.getUserByOpenid(decoded.openid) : null)
+      if (user) req.user = user
     } catch {
       // 忽略错误
     }

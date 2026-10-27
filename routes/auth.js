@@ -97,7 +97,7 @@ router.post('/login', async (req, res) => {
         avatarText: user.avatarText || '',
         avatarUrl: user.avatarUrl,
         isProfileCompleted: user.isProfileCompleted || false,
-        isExamUnlocked: Boolean(user.isExamUnlocked),
+        isExamUnlocked: true,
         createdAt: user.createdAt,
         loginCount: user.loginCount,
       },
@@ -128,12 +128,37 @@ router.post('/profile', authMiddleware, (req, res) => {
   const cleanPhone = phone ? String(phone).trim() : ''
   const cleanStudentId = studentId ? String(studentId).trim() : ''
   const cleanRealName = realName ? String(realName).trim() : ''
-  const cleanClassName = className ? String(className).trim() : ''
+  let cleanClassName = className ? String(className).trim() : ''
 
-  if (!cleanRealName || !cleanClassName || !cleanPhone) {
+  const roster = cleanStudentId ? db.lookupFreshmanChecked(cleanStudentId, cleanRealName) : null
+  if (roster && roster.found && roster.nameMatched === false) {
     return res.status(400).json({
       code: 400,
-      message: '请完整填写姓名、所在班级与电话号码',
+      message: roster.message,
+    })
+  }
+
+  const matched = Boolean(roster && roster.nameMatched && roster.student)
+  let cleanGrade = grade || ''
+  let cleanCollege = college || ''
+  let cleanMajor = major || ''
+  let cleanCampus = campus || ''
+  if (matched) {
+    cleanClassName = roster.student.className
+    cleanGrade = roster.student.grade || '2026级'
+    cleanCollege = roster.student.college || ''
+    cleanMajor = roster.student.major || ''
+    cleanCampus = roster.student.campus || ''
+  } else {
+    cleanGrade = db.normalizeGradeInput(cleanGrade, '')
+  }
+
+  if (!cleanRealName || !cleanPhone || !cleanClassName) {
+    return res.status(400).json({
+      code: 400,
+      message: roster && roster.found === false
+        ? '未在2026级新生名单中找到该学号。大二、大三、大四请手动填写班级、学院、专业和校区'
+        : '请完整填写姓名、所在班级与电话号码',
     })
   }
 
@@ -142,7 +167,7 @@ router.post('/profile', authMiddleware, (req, res) => {
     phone: cleanPhone,
     studentId: cleanStudentId,
     className: cleanClassName,
-    grade: grade || '',
+    grade: cleanGrade,
   })
   if (!validation.valid) {
     return res.status(400).json({
@@ -151,8 +176,17 @@ router.post('/profile', authMiddleware, (req, res) => {
     })
   }
 
-  // 若学号匹配 2026 新生库，自动补全学院/专业/校区并标记已认证
-  const matchedFreshman = cleanStudentId ? db.lookupFreshman(cleanStudentId) : null
+  const conflict = db.findProfileConflict({
+    phone: cleanPhone,
+    studentId: cleanStudentId,
+    exceptUserId: req.user.id,
+  })
+  if (conflict) {
+    return res.status(400).json({
+      code: 400,
+      message: conflict.message,
+    })
+  }
 
   const user = db.updateUserProfile(req.user.id, {
     realName: cleanRealName,
@@ -161,12 +195,12 @@ router.post('/profile', authMiddleware, (req, res) => {
     studentId: cleanStudentId,
     nickname,
     avatarUrl,
-    grade: grade || (matchedFreshman ? '2026级' : ''),
-    college: college || (matchedFreshman ? matchedFreshman.college : ''),
-    major: major || (matchedFreshman ? matchedFreshman.major : ''),
-    campus: campus || (matchedFreshman ? matchedFreshman.campus : ''),
+    grade: cleanGrade,
+    college: cleanCollege,
+    major: cleanMajor,
+    campus: cleanCampus,
     rankDisplayMode: rankDisplayMode === 'realName' ? 'realName' : 'nickname',
-    isFreshmanVerified: Boolean(matchedFreshman),
+    isFreshmanVerified: matched,
   })
 
   if (!user) {
@@ -200,7 +234,9 @@ router.post('/profile', authMiddleware, (req, res) => {
 
   return res.json({
     code: 0,
-    message: '信息保存成功',
+    message: user.isFreshmanVerified
+      ? '已按2026级新生名单匹配学院、专业、班级和校区'
+      : '信息保存成功',
     data: {
       id: user.id,
       realName: user.realName,
@@ -215,7 +251,8 @@ router.post('/profile', authMiddleware, (req, res) => {
       isFreshmanVerified: Boolean(user.isFreshmanVerified),
       avatarText: user.avatarText,
       isProfileCompleted: user.isProfileCompleted,
-      isExamUnlocked: Boolean(user.isExamUnlocked),
+      isExamUnlocked: true,
+      profileSource: user.isFreshmanVerified ? 'freshman-roster' : 'manual',
       nickname: user.nickname,
       avatarUrl: user.avatarUrl,
     },
@@ -223,30 +260,19 @@ router.post('/profile', authMiddleware, (req, res) => {
 })
 
 /**
- * 2026级大一新生学号一键核验查询
- * GET /api/auth/freshman-lookup?studentId=260101011001
+ * 2026级大一新生学号核验。realName / name 可选：
+ * 不传姓名只查学号；传了姓名则必须和新生名单一致，否则不返回档案。
+ * GET /api/auth/freshman-lookup?studentId=260101011001&realName=姓名
  */
 router.get('/freshman-lookup', optionalAuth, (req, res) => {
   const sid = String((req.query && req.query.studentId) || '').trim()
+  const realName = String((req.query && (req.query.realName || req.query.name)) || '').trim()
   if (!sid || sid.length < 8) {
     return res.status(400).json({ code: 400, message: '请输入正确的学号' })
   }
-  const found = db.lookupFreshman(sid)
-  if (!found) {
-    return res.json({
-      code: 0,
-      data: {
-        found: false,
-        message: '未在2026级新生名单中找到该学号，请核对学号或切换对应年级手动填写',
-      },
-    })
-  }
   return res.json({
     code: 0,
-    data: {
-      found: true,
-      student: found,
-    },
+    data: db.lookupFreshmanChecked(sid, realName),
   })
 })
 
@@ -255,10 +281,13 @@ router.get('/freshman-lookup', optionalAuth, (req, res) => {
  * GET /api/auth/colleges
  */
 router.get('/colleges', (req, res) => {
+  const meta = db.getProfileFormMeta()
   return res.json({
     code: 0,
     data: {
-      colleges: db.getCollegesMeta(),
+      colleges: meta.colleges,
+      campuses: meta.campuses,
+      grades: meta.grades,
     },
   })
 })
@@ -273,91 +302,59 @@ router.post('/app-login', (req, res) => {
   if (!key) {
     return res.status(400).json({ code: 400, message: '请输入学号或手机号' })
   }
-  const allUsers = db.getAllUsers()
-  let user = allUsers.find(u => u.studentId === key || u.phone === key)
-  if (!user) {
-    const freshman = db.lookupFreshman(key)
-    const created = db.createOrUpdateUser(`app_${key}`, {
-      studentId: freshman ? freshman.studentId : (/^\d{10,14}$/.test(key) ? key : ''),
-      phone: /^1[3-9]\d{9}$/.test(key) ? key : '',
-      realName: freshman ? freshman.realName : '',
-      className: freshman ? freshman.className : '',
-    })
-    user = created.user
+  // 只登录 app_ 专用身份。不能因为学号或手机号相同，就把微信用户的登录态发给调用方。
+  const openid = `app_${key}`
+  const existing = db.getUserByOpenid(openid)
+  let nextStudentId = /^\d{8,14}$/.test(key) ? key : ''
+  let nextPhone = /^1[3-9]\d{9}$/.test(key) ? key : ''
+  const exceptUserId = existing ? existing.id : ''
+  if (nextStudentId && db.findProfileConflict({ studentId: nextStudentId, exceptUserId })) {
+    nextStudentId = ''
   }
+  if (nextPhone && db.findProfileConflict({ phone: nextPhone, exceptUserId })) {
+    nextPhone = ''
+  }
+  const created = db.createOrUpdateUser(openid, {
+    studentId: nextStudentId,
+    phone: nextPhone,
+  })
+  const user = created.user
   const token = jwt.sign({ userId: user.id, openid: user.openid }, config.jwtSecret, { expiresIn: '30d' })
   return res.json({
     code: 0,
     message: 'APP 登录成功',
-    data: { token, user },
+    data: {
+      token,
+      user: {
+        ...user,
+        isExamUnlocked: true,
+      },
+    },
   })
 })
 
 /**
- * 校验激活码并解锁模考功能
+ * 兼容旧版「输入激活码」入口。题库和模考已经全部开放，这里不再核销激活码。
  * POST /api/auth/unlock-exam
- * Body: { code, realName?, className?, phone?, studentId?, userId?, openid? }
+ * Body: { code? } 激活码可省略，传了也不会消耗。
  */
 router.post('/unlock-exam', optionalAuth, (req, res) => {
-  const { code, realName, className, phone, studentId, userId, openid } = req.body || {}
-  const cleanCode = (code || '').trim().toUpperCase()
-
-  if (!cleanCode) {
-    return res.status(400).json({ code: 400, message: '请输入激活码' })
-  }
-
-  let targetUser = req.user
-  if (!targetUser && (userId || openid || phone || realName)) {
-    const existing = db.getUserById(userId) || (openid ? db.getUserByOpenid(openid) : null)
-    if (existing) {
-      targetUser = existing
-    } else {
-      targetUser = {
-        id: userId || 'local_user',
-        openid: openid || '',
-        realName: realName || '',
-        className: className || '',
-        phone: phone || '',
-        studentId: studentId || '',
-      }
-    }
-  }
-
-  if (targetUser) {
-    if (realName && !targetUser.realName) targetUser.realName = realName
-    if (className && !targetUser.className) targetUser.className = className
-    if (phone && !targetUser.phone) targetUser.phone = phone
-    if (studentId && !targetUser.studentId) targetUser.studentId = studentId
-  }
-
-  const result = db.redeemActivationCode(cleanCode, targetUser)
-
-  if (!result.success) {
-    return res.status(400).json({
-      code: 400,
-      message: result.message,
+  const targetUser = req.user
+  if (targetUser && targetUser.id) {
+    db.grantExamAccess(targetUser.id)
+    db.addEvent({
+      userId: targetUser.id,
+      openid: targetUser.openid,
+      eventType: 'unlock_exam',
+      meta: { free: true },
     })
   }
 
-  db.addEvent({
-    userId: targetUser ? targetUser.id : null,
-    openid: targetUser ? targetUser.openid : null,
-    eventType: 'unlock_exam',
-    meta: {
-      code: cleanCode,
-      realName: targetUser ? targetUser.realName : '',
-      className: targetUser ? targetUser.className : '',
-      phone: targetUser ? targetUser.phone : '',
-    },
-  })
-
   return res.json({
     code: 0,
-    message: result.message || '模考功能解锁成功',
+    message: '题库与模考已全部开放，无需激活码',
     data: {
       isExamUnlocked: true,
-      code: cleanCode,
-      item: result.codeItem,
     },
   })
 })
@@ -369,7 +366,10 @@ router.post('/unlock-exam', optionalAuth, (req, res) => {
 router.get('/me', authMiddleware, (req, res) => {
   return res.json({
     code: 0,
-    data: req.user,
+    data: {
+      ...req.user,
+      isExamUnlocked: true,
+    },
   })
 })
 
