@@ -16,6 +16,21 @@ function resolveUserKey(req) {
   )
 }
 
+/** 对外只暴露票的前 8 位，避免把 JSESSIONID 写进接口响应。 */
+function presentUserSession(userKey) {
+  const user = userKey ? electricityService.getUserSession(userKey) : null
+  const shared = electricityService.getSessionStatus()
+  return {
+    userKey: userKey || '',
+    hasUserSession: Boolean(user),
+    sessionPrefix: user ? user.sessionPrefix : '',
+    source: user ? user.source : '',
+    savedAt: user ? user.savedAt : 0,
+    fallback: user ? 'user' : shared.hasSession ? 'shared' : 'none',
+    sharedAvailable: Boolean(shared.hasSession),
+  }
+}
+
 /**
  * status / bind 共用：ROOM_MISMATCH 时丢掉被改房间的余额，并带上请求房间与返回房间。
  */
@@ -66,6 +81,42 @@ router.get('/rooms-meta', async (req, res) => {
 })
 
 /**
+ * 查看当前用户自己的财务处会话票状态（不含完整 JSESSIONID）
+ * GET /api/electricity/session
+ */
+router.get('/session', optionalAuth, (req, res) => {
+  const userKey = resolveUserKey(req)
+  if (!userKey) {
+    return res.status(400).json({ code: 400, message: '缺少用户标识' })
+  }
+  return res.json({ code: 0, data: presentUserSession(userKey) })
+})
+
+/**
+ * 为当前用户保存自己的财务处会话票。只影响该 userKey，不覆盖共享兜底票或其他用户。
+ * POST /api/electricity/session   body: { jsessionId }
+ */
+router.post('/session', optionalAuth, (req, res) => {
+  const userKey = resolveUserKey(req)
+  const sid = req.body && req.body.jsessionId
+  if (!userKey) {
+    return res.status(400).json({ code: 400, message: '缺少用户标识' })
+  }
+  if (!sid || !String(sid).trim()) {
+    return res.status(400).json({ code: 400, message: '缺少会话票' })
+  }
+  const ok = electricityService.setUserSession(userKey, sid, 'api')
+  if (!ok) {
+    return res.status(400).json({ code: 400, message: '会话票无效' })
+  }
+  return res.json({
+    code: 0,
+    message: '已保存当前用户的电费会话',
+    data: presentUserSession(userKey),
+  })
+})
+
+/**
  * 查询当前用户绑定的宿舍实时电费余量与预警状态
  * GET /api/electricity/status
  */
@@ -83,7 +134,9 @@ router.get('/status', optionalAuth, async (req, res) => {
     })
   }
 
-  const state = electricityService.guardRoomMismatch(await electricityService.computeRealtimeBalance(record))
+  const state = electricityService.guardRoomMismatch(
+    await electricityService.computeRealtimeBalance({ ...record, userKey: record.userKey || userKey })
+  )
 
   // 低于 10 元才提醒。房间不一致时 guard 已清掉外来余额，不会拿别人的低余额去推送。
   const openid = (req.user && req.user.openid) || req.headers['x-wx-openid'] || record.openid || ''
@@ -148,8 +201,10 @@ router.post('/bind', optionalAuth, async (req, res) => {
     openid: openid || undefined,
   }
 
+  // 票据只进该用户自己的会话库。宿舍档案会进 studymaster.json，不能再存 JSESSIONID。
   if (financeJsessionId && String(financeJsessionId).trim()) {
-    patch.financeJsessionId = String(financeJsessionId).trim()
+    const stored = electricityService.setUserSession(userKey, String(financeJsessionId).trim(), 'bind')
+    if (stored) patch.financeJsessionId = ''
   }
 
   if (calibratedBalance !== undefined && calibratedBalance !== '' && !isNaN(Number(calibratedBalance))) {
@@ -165,7 +220,9 @@ router.post('/bind', optionalAuth, async (req, res) => {
   }
 
   const saved = db.saveUserDorm(userKey, patch)
-  const state = electricityService.guardRoomMismatch(await electricityService.computeRealtimeBalance(saved))
+  const state = electricityService.guardRoomMismatch(
+    await electricityService.computeRealtimeBalance({ ...saved, userKey: (saved && saved.userKey) || userKey })
+  )
 
   let alertResult = null
   if (state.isLowBalance && state.syncSource !== 'room_mismatch' && openid && !openid.startsWith('mock_')) {
