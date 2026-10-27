@@ -89,6 +89,50 @@ router.post('/sync', async (req, res) => {
   }
 })
 
+function addKey(keys, value) {
+  const key = String(value || '').trim()
+  if (key && !keys.includes(key)) keys.push(key)
+  return keys
+}
+
+function scheduleWriteKeys(user, requestedKey, scheduleStudentId) {
+  const keys = []
+  if (user) {
+    addKey(keys, user.openid)
+    addKey(keys, user.id)
+    const ownSid = String(user.studentId || '').trim()
+    const requestedSid = String(scheduleStudentId || '').trim()
+    if (ownSid) addKey(keys, ownSid)
+    if (requestedSid && (!ownSid || requestedSid === ownSid)) addKey(keys, requestedSid)
+    const requested = String(requestedKey || '').trim()
+    const own = new Set([user.openid, user.id, ownSid].filter(Boolean).map((item) => String(item).trim()))
+    if (requested && own.has(requested)) addKey(keys, requested)
+    return keys
+  }
+  addKey(keys, requestedKey)
+  const sid = String(scheduleStudentId || '').trim()
+  if (sid && sid === String(requestedKey || '').trim()) addKey(keys, sid)
+  return keys
+}
+
+function scheduleReadKeys(user, requestedKey) {
+  const keys = []
+  if (user) {
+    addKey(keys, user.openid)
+    addKey(keys, user.id)
+    addKey(keys, user.studentId)
+    addKey(keys, user.phone)
+    const requested = String(requestedKey || '').trim()
+    const own = new Set(
+      [user.openid, user.id, user.studentId, user.phone].filter(Boolean).map((item) => String(item).trim())
+    )
+    if (requested && own.has(requested)) addKey(keys, requested)
+    return keys
+  }
+  addKey(keys, requestedKey)
+  return keys
+}
+
 /**
  * 保存用户专属课表
  * POST /api/schedule/user-schedule
@@ -96,30 +140,17 @@ router.post('/sync', async (req, res) => {
  */
 router.post('/user-schedule', optionalAuth, (req, res) => {
   const { scheduleData, userKey } = req.body || {}
-  const targetKey = (req.user && (req.user.studentId || req.user.openid || req.user.phone || req.user.id)) || userKey
-  if (!targetKey) {
-    return res.status(400).json({ code: 400, message: '缺少用户标识，无法保存课表' })
-  }
   if (!scheduleData || !scheduleData.sessions) {
     return res.status(400).json({ code: 400, message: '课表数据格式不正确' })
   }
-
-  const keysToUpdate = new Set()
-  keysToUpdate.add(String(targetKey).trim())
-  if (userKey) keysToUpdate.add(String(userKey).trim())
-  if (req.user) {
-    if (req.user.studentId) keysToUpdate.add(String(req.user.studentId).trim())
-    if (req.user.phone) keysToUpdate.add(String(req.user.phone).trim())
-    if (req.user.openid) keysToUpdate.add(String(req.user.openid).trim())
-    if (req.user.id) keysToUpdate.add(String(req.user.id).trim())
+  const keysToUpdate = scheduleWriteKeys(req.user, userKey, scheduleData.studentId)
+  if (keysToUpdate.length === 0) {
+    return res.status(400).json({ code: 400, message: '缺少用户标识，无法保存课表' })
   }
-  if (scheduleData.studentId) keysToUpdate.add(String(scheduleData.studentId).trim())
 
   let savedRecord = null
   for (const k of keysToUpdate) {
-    if (k) {
-      savedRecord = db.saveUserSchedule(k, scheduleData)
-    }
+    savedRecord = db.saveUserSchedule(k, scheduleData)
   }
 
   return res.json({
@@ -135,26 +166,22 @@ router.post('/user-schedule', optionalAuth, (req, res) => {
  */
 router.get('/user-schedule', optionalAuth, (req, res) => {
   const { userKey } = req.query || {}
-  const keysToCheck = []
-  if (req.user) {
-    if (req.user.studentId) keysToCheck.push(String(req.user.studentId).trim())
-    if (req.user.phone) keysToCheck.push(String(req.user.phone).trim())
-    if (req.user.openid) keysToCheck.push(String(req.user.openid).trim())
-    if (req.user.id) keysToCheck.push(String(req.user.id).trim())
-  }
-  if (userKey) keysToCheck.push(String(userKey).trim())
+  const keysToCheck = scheduleReadKeys(req.user, userKey)
 
   for (const k of keysToCheck) {
     if (!k) continue
     const record = db.getUserSchedule(k)
-    if (record && record.scheduleData) {
-      return res.json({
-        code: 0,
-        message: '读取成功',
-        data: record.scheduleData,
-        updatedAt: record.updatedAt,
-      })
+    if (!record || !record.scheduleData) continue
+    if (req.user && k === String(req.user.phone || '').trim()) {
+      const sid = String(record.scheduleData.studentId || '').trim()
+      if (sid && req.user.studentId && sid !== String(req.user.studentId).trim()) continue
     }
+    return res.json({
+      code: 0,
+      message: '读取成功',
+      data: record.scheduleData,
+      updatedAt: record.updatedAt,
+    })
   }
 
   return res.json({
@@ -336,9 +363,10 @@ router.post('/import-jwxt', optionalAuth, async (req, res) => {
       user: req.user || null,
     })
 
-    // 自动保存至当前登录用户的云端专属课表
+    // 课表只记在本人 openid / 用户 id / 本次教务学号上，不再写到手机号，避免和别人的学号撞键。
     if (req.user) {
-      const keys = [req.user.studentId, req.user.openid, req.user.phone, req.user.id, studentId].filter(Boolean)
+      const keys = scheduleWriteKeys(req.user, '', '')
+      if (studentId) addKey(keys, studentId)
       keys.forEach(k => db.saveUserSchedule(String(k).trim(), result))
     } else if (studentId) {
       db.saveUserSchedule(String(studentId).trim(), result)

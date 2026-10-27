@@ -24,16 +24,19 @@ if (!fs.existsSync(DB_FILE) && fs.existsSync(SEED_FILE) && DB_FILE !== SEED_FILE
   }
 }
 
-// 初始化默认数据结构
-const initialData = {
-  users: [],       // { id, openid, realName, className, phone, studentId, avatarText, nickname, avatarUrl, isProfileCompleted, isExamUnlocked, createdAt, lastLoginAt, loginCount, ip }
-  events: [],      // { id, userId, openid, eventType, bankId, bankTitle, score, total, meta, createdAt }
-  activationCodes: [], // { id, code, isUsed, usedByUserId, usedByUserRealName, usedByUserClass, usedByUserPhone, usedByUserOpenid, usedAt, createdAt }
-  announcement: null,  // 开屏公告配置，结构见 services/announcementService.js；null = 用内置默认值
-  reminders: [],       // 上课提醒订阅 { openid, userId, className, enabled, aheadMinutes, quota, subscribeCount, ... }
-  reminderLogs: [],    // 上课提醒下发日志 { id, openid, className, courseName, startAt, remindAt, status, errcode, errmsg, createdAt }
-  reminderConfig: null, // 上课提醒全局配置，结构见 services/reminderService.js；null = 用内置默认值
-  userSchedules: {},   // 用户保存的课表日程：key 为 userKey (userId / openid / studentId / phone) -> { scheduleData, updatedAt }
+// 每次返回全新对象，避免浅拷贝把 users/events 数组和默认模板串在一起
+function emptyData() {
+  return {
+    users: [],       // { id, openid, realName, className, phone, studentId, avatarText, nickname, avatarUrl, isProfileCompleted, isExamUnlocked, createdAt, lastLoginAt, loginCount, ip }
+    events: [],      // { id, userId, openid, eventType, bankId, bankTitle, score, total, meta, createdAt }
+    activationCodes: [], // { id, code, isUsed, usedByUserId, usedByUserRealName, usedByUserClass, usedByUserPhone, usedByUserOpenid, usedAt, createdAt }
+    announcement: null,  // 开屏公告配置，结构见 services/announcementService.js；null = 用内置默认值
+    reminders: [],       // 上课提醒订阅 { openid, userId, className, enabled, aheadMinutes, quota, subscribeCount, ... }
+    reminderLogs: [],    // 上课提醒下发日志 { id, openid, className, courseName, startAt, remindAt, status, errcode, errmsg, createdAt }
+    reminderConfig: null, // 上课提醒全局配置，结构见 services/reminderService.js；null = 用内置默认值
+    userSchedules: {},   // 用户保存的课表日程：key 为 openid / userId / studentId
+    userDorms: {},       // 电费宿舍绑定：key 必须是用户本人标识，不能是宿舍房间
+  }
 }
 
 // 提醒日志只保留最近 N 条，避免 data/studymaster.json 无限膨胀
@@ -67,91 +70,196 @@ function normalizePhoneAndStudentId(phoneInput, studentIdInput) {
   return { phone, studentId }
 }
 
+function normalizeRealName(name) {
+  return String(name || '')
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[•・‧．.]/g, '·')
+}
+
+// 同一条流水不能同时算给两个用户。userId 和 openid 都在、但指向不同人时，这条记录不归任何一方。
+function eventBelongsTo(event, userId, openid) {
+  if (!event) return false
+  const idMatch = Boolean(userId && event.userId && event.userId === userId)
+  const openidMatch = Boolean(openid && event.openid && event.openid === openid)
+  if (idMatch) {
+    if (event.openid && openid && event.openid !== openid) return false
+    return true
+  }
+  if (openidMatch) {
+    if (userId && event.userId && event.userId !== userId) return false
+    return true
+  }
+  return false
+}
+
+// 主库解析失败时禁止把空库写回去。备份成功后才允许用每日备份或空库继续服务。
+let persistBlocked = false
+
+function backupUnreadableDb() {
+  try {
+    const backupDir = path.join(DATA_DIR, 'backups')
+    fs.mkdirSync(backupDir, { recursive: true })
+    const dest = path.join(backupDir, `studymaster.corrupt-${Date.now()}.json`)
+    fs.copyFileSync(DB_FILE, dest)
+    console.error('[DB] 无法解析的主库已备份到', dest)
+    return true
+  } catch (err) {
+    console.error('[DB] 损坏主库备份失败:', err.message)
+    return false
+  }
+}
+
+function readNewestDailyBackup() {
+  const backupDir = path.join(DATA_DIR, 'backups')
+  if (!fs.existsSync(backupDir)) return null
+  let names = []
+  try {
+    names = fs.readdirSync(backupDir)
+  } catch (err) {
+    return null
+  }
+  const candidates = names
+    .filter((name) => /^studymaster_\d{4}-\d{2}-\d{2}\.json$/.test(name))
+    .map((name) => {
+      const full = path.join(backupDir, name)
+      let mtime = 0
+      try {
+        mtime = fs.statSync(full).mtimeMs
+      } catch (err) {
+        mtime = 0
+      }
+      return { full, mtime }
+    })
+    .sort((a, b) => b.mtime - a.mtime)
+
+  for (const item of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(item.full, 'utf8'))
+      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.users)) {
+        return parsed
+      }
+    } catch (err) {
+      console.warn('[DB] 跳过无法解析的备份:', item.full)
+    }
+  }
+  return null
+}
+
+function writeDbAtomic() {
+  if (!memoryDb || persistBlocked) return
+  const userCount = Array.isArray(memoryDb.users) ? memoryDb.users.length : 0
+  if (userCount === 0 && fs.existsSync(DB_FILE)) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
+      if (prev && Array.isArray(prev.users) && prev.users.length > 0) {
+        console.error('[DB] 拒绝用空用户表覆盖已有主库')
+        return
+      }
+    } catch (err) {
+      // 主库当前不可解析。读取失败时已经另存副本，这里允许写回一份可解析的数据。
+    }
+  }
+  const tmpFile = `${DB_FILE}.tmp`
+  fs.writeFileSync(tmpFile, JSON.stringify(memoryDb, null, 2), 'utf8')
+  fs.renameSync(tmpFile, DB_FILE)
+}
+
+function ensureCollections(data) {
+  if (!Array.isArray(data.users)) data.users = []
+  if (!Array.isArray(data.events)) data.events = []
+  if (!Array.isArray(data.activationCodes)) data.activationCodes = []
+  if (data.announcement === undefined) data.announcement = null
+  if (!Array.isArray(data.reminders)) data.reminders = []
+  if (!Array.isArray(data.reminderLogs)) data.reminderLogs = []
+  if (data.reminderConfig === undefined) data.reminderConfig = null
+  if (!data.userSchedules || typeof data.userSchedules !== 'object' || Array.isArray(data.userSchedules)) {
+    data.userSchedules = {}
+  }
+  if (!data.userDorms || typeof data.userDorms !== 'object' || Array.isArray(data.userDorms)) {
+    data.userDorms = {}
+  }
+}
+
+function normalizeStoredDb() {
+  ensureCollections(memoryDb)
+  let userUpdated = false
+  memoryDb.users.forEach((u) => {
+    const oldPhone = u.phone
+    const oldStudentId = u.studentId
+    const { phone, studentId } = normalizePhoneAndStudentId(u.phone, u.studentId)
+    u.phone = phone
+    u.studentId = studentId
+    u.isProfileCompleted = Boolean(u.realName && u.className && u.phone)
+    if (oldPhone !== u.phone || oldStudentId !== u.studentId) {
+      userUpdated = true
+    }
+  })
+
+  // 管理端仍可查看和导出历史激活码。用户能不能做题不再看这些码。
+  const official50Codes = []
+  for (let i = 1001; i <= 1050; i++) {
+    official50Codes.push(`YCIT-2026-${i}`)
+  }
+  const presetCodes = [
+    ...official50Codes,
+    ...(config.examActivationCodes || ['VIP888', 'STUDY666', 'YCIT888', '2026888', 'SM888', 'EXAM888']),
+  ]
+  const existingCodes = new Set(memoryDb.activationCodes.map((c) => String(c.code || '').toUpperCase()))
+  let addedNew = false
+  presetCodes.forEach((p) => {
+    const clean = String(p || '').toUpperCase().trim()
+    if (!clean || existingCodes.has(clean)) return
+    memoryDb.activationCodes.push({
+      id: `code_${clean}`,
+      code: clean,
+      isUsed: false,
+      usedByUserId: null,
+      usedByUserRealName: null,
+      usedByUserClass: null,
+      usedByUserPhone: null,
+      usedByUserOpenid: null,
+      usedAt: null,
+      createdAt: 1787125200000,
+    })
+    existingCodes.add(clean)
+    addedNew = true
+  })
+  return addedNew || userUpdated
+}
+
 function loadDb() {
   if (memoryDb) return memoryDb
-  if (fs.existsSync(DB_FILE)) {
-    try {
-      const content = fs.readFileSync(DB_FILE, 'utf8')
-      memoryDb = JSON.parse(content)
-      if (!Array.isArray(memoryDb.activationCodes)) {
-        memoryDb.activationCodes = []
-      }
-      // 老数据兼容：早期版本没有 announcement 字段
-      if (memoryDb.announcement === undefined) {
-        memoryDb.announcement = null
-      }
-      // 老数据兼容：早期版本没有上课提醒相关字段
-      if (!Array.isArray(memoryDb.reminders)) {
-        memoryDb.reminders = []
-      }
-      if (!Array.isArray(memoryDb.reminderLogs)) {
-        memoryDb.reminderLogs = []
-      }
-      if (memoryDb.reminderConfig === undefined) {
-        memoryDb.reminderConfig = null
-      }
-      if (!memoryDb.userSchedules || typeof memoryDb.userSchedules !== 'object') {
-        memoryDb.userSchedules = {}
-      }
-      // 数据自动纠偏归正
-      let userUpdated = false
-      if (Array.isArray(memoryDb.users)) {
-        memoryDb.users.forEach(u => {
-          const oldPhone = u.phone
-          const oldStudentId = u.studentId
-          const { phone, studentId } = normalizePhoneAndStudentId(u.phone, u.studentId)
-          u.phone = phone
-          u.studentId = studentId
-          u.isProfileCompleted = Boolean(u.realName && u.className && u.phone)
-          if (oldPhone !== u.phone || oldStudentId !== u.studentId) {
-            userUpdated = true
-          }
-        })
-      }
-
-      // 生成 50 个正式考培激活码 (YCIT-2026-1001 ~ YCIT-2026-1050)
-      const official50Codes = []
-      for (let i = 1001; i <= 1050; i++) {
-        official50Codes.push(`YCIT-2026-${i}`)
-      }
-
-      // 预设激活码列表
-      const presetCodes = [
-        ...official50Codes,
-        ...(config.examActivationCodes || ['VIP888', 'STUDY666', 'YCIT888', '2026888', 'SM888', 'EXAM888'])
-      ]
-
-      const existingCodes = new Set(memoryDb.activationCodes.map(c => c.code.toUpperCase()))
-      let addedNew = false
-      presetCodes.forEach(p => {
-        const clean = p.toUpperCase().trim()
-        if (!existingCodes.has(clean)) {
-          memoryDb.activationCodes.push({
-            id: `code_${clean}`,
-            code: clean,
-            isUsed: false,
-            usedByUserId: null,
-            usedByUserRealName: null,
-            usedByUserClass: null,
-            usedByUserPhone: null,
-            usedByUserOpenid: null,
-            usedAt: null,
-            createdAt: 1787125200000,
-          })
-          existingCodes.add(clean)
-          addedNew = true
-        }
-      })
-
-      if (addedNew || userUpdated) {
-        saveDb()
-      }
-    } catch (e) {
-      console.error('读取数据库失败，重新初始化:', e)
-      memoryDb = { ...initialData }
-    }
+  let loadedFromBackup = false
+  if (!fs.existsSync(DB_FILE)) {
+    memoryDb = emptyData()
   } else {
-    memoryDb = { ...initialData }
+    try {
+      memoryDb = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))
+      if (!memoryDb || typeof memoryDb !== 'object' || Array.isArray(memoryDb)) {
+        throw new Error('主库结构不是对象')
+      }
+    } catch (err) {
+      console.error('[DB] 主库解析失败，不会用空库覆盖原文件:', err.message)
+      const backedUp = backupUnreadableDb()
+      const restored = readNewestDailyBackup()
+      if (restored) {
+        memoryDb = restored
+        loadedFromBackup = true
+        console.error('[DB] 已从每日备份回退用户数据')
+      } else {
+        memoryDb = emptyData()
+        persistBlocked = !backedUp
+        if (persistBlocked) {
+          console.error('[DB] 损坏文件备份失败，暂停落盘')
+        }
+      }
+    }
+  }
+
+  const dirty = normalizeStoredDb()
+  if ((dirty || loadedFromBackup || !fs.existsSync(DB_FILE)) && !persistBlocked) {
     saveDb()
   }
   return memoryDb
@@ -159,14 +267,12 @@ function loadDb() {
 
 let saveTimer = null
 function saveDb() {
-  if (!memoryDb) return
+  if (!memoryDb || persistBlocked) return
   // 防抖 + 原子化写入临时文件再重命名
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     try {
-      const tmpFile = `${DB_FILE}.tmp`
-      fs.writeFileSync(tmpFile, JSON.stringify(memoryDb, null, 2), 'utf8')
-      fs.renameSync(tmpFile, DB_FILE)
+      writeDbAtomic()
     } catch (err) {
       console.error('持久化写入失败:', err)
     }
@@ -174,11 +280,13 @@ function saveDb() {
 }
 
 function flushSync() {
-  if (!memoryDb) return
+  if (!memoryDb || persistBlocked) return
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
   try {
-    const tmpFile = `${DB_FILE}.tmp`
-    fs.writeFileSync(tmpFile, JSON.stringify(memoryDb, null, 2), 'utf8')
-    fs.renameSync(tmpFile, DB_FILE)
+    writeDbAtomic()
   } catch (err) {
     console.error('强制同步写入失败:', err)
   }
@@ -216,9 +324,9 @@ const db = {
         avatarText: extraInfo.realName ? extraInfo.realName.trim().charAt(0) : '',
         avatarUrl: extraInfo.avatarUrl || '',
         isProfileCompleted: Boolean(extraInfo.realName && extraInfo.className && phone),
-        isExamUnlocked: false,
+        isExamUnlocked: true,
         examUnlockCode: null,
-        examUnlockedAt: null,
+        examUnlockedAt: now,
         createdAt: now,
         lastLoginAt: now,
         loginCount: 1,
@@ -239,6 +347,7 @@ const db = {
       if (studentId) user.studentId = studentId
       if (phone) user.phone = phone
       user.isProfileCompleted = Boolean(user.realName && user.className && user.phone)
+      user.isExamUnlocked = true
     }
 
     saveDb()
@@ -288,10 +397,23 @@ const db = {
     if (!user) return null
 
     user.isExamUnlocked = true
-    user.examUnlockCode = code
-    user.examUnlockedAt = Date.now()
+    if (code) user.examUnlockCode = code
+    user.examUnlockedAt = user.examUnlockedAt || Date.now()
 
     saveDb()
+    return user
+  },
+
+  // 题库和模考不再需要激活码。只把已有用户标成已开通，不核销、不覆盖历史激活码。
+  grantExamAccess(userId) {
+    const d = loadDb()
+    const user = d.users.find((u) => u.id === userId)
+    if (!user) return null
+    if (!user.isExamUnlocked) {
+      user.isExamUnlocked = true
+      user.examUnlockedAt = user.examUnlockedAt || Date.now()
+      saveDb()
+    }
     return user
   },
 
@@ -576,8 +698,8 @@ const db = {
 
     // 丰富每个学生的做题统计情况
     const enrichedUsers = d.users.map(u => {
-      const userExams = examEvents.filter(e => (u.id && e.userId === u.id) || (u.openid && e.openid === u.openid))
-      const userPractices = practiceEvents.filter(e => (u.id && e.userId === u.id) || (u.openid && e.openid === u.openid))
+      const userExams = examEvents.filter((e) => eventBelongsTo(e, u.id, u.openid))
+      const userPractices = practiceEvents.filter((e) => eventBelongsTo(e, u.id, u.openid))
 
       const localExamCount = userExams.length
       const examCount = Math.max(localExamCount, Number(u.cloudExamCount) || 0)
@@ -612,15 +734,13 @@ const db = {
           boundAt = matched.usedAt
         }
       }
-      const isExamUnlocked = Boolean(u.isExamUnlocked || boundCode)
-
       return {
         ...u,
         phone: displayPhone,
         rawPhone: u.phone || '',
         studentId: u.studentId || '',
         isProfileCompleted: Boolean(u.realName && u.className && displayPhone),
-        isExamUnlocked,
+        isExamUnlocked: true,
         boundCode: boundCode || null,
         boundAt: boundAt || null,
         examCount,
@@ -762,8 +882,7 @@ const db = {
 
     const exams = d.events.filter(e => {
       const isExam = e.eventType === 'finish_exam'
-      const match = (user.id && e.userId === user.id) || (user.openid && e.openid === user.openid)
-      return isExam && match
+      return isExam && eventBelongsTo(e, user.id, user.openid)
     }).map(e => {
       const total = e.total && e.total > 0 ? e.total : 100
       const score = e.score || 0
@@ -778,9 +897,9 @@ const db = {
       }
     }).sort((a, b) => b.createdAt - a.createdAt)
 
-    const events = d.events.filter(e => {
-      return (user.id && e.userId === user.id) || (user.openid && e.openid === user.openid)
-    }).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30)
+    const events = d.events.filter((e) => eventBelongsTo(e, user.id, user.openid))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 30)
 
     const maxScore = exams.length > 0 ? Math.max(...exams.map(x => x.score)) : 0
     const totalScore = exams.reduce((s, x) => s + x.score, 0)
@@ -790,6 +909,7 @@ const db = {
     return {
       user: {
         ...user,
+        isExamUnlocked: true,
         examCount: exams.length,
         maxScore,
         avgScore,
@@ -802,11 +922,7 @@ const db = {
 
   getUserExamHistory(userId, openid) {
     const d = loadDb()
-    const list = d.events.filter(e => {
-      const isExam = e.eventType === 'finish_exam'
-      const matchUser = (userId && e.userId === userId) || (openid && e.openid === openid)
-      return isExam && matchUser
-    })
+    const list = d.events.filter((e) => e.eventType === 'finish_exam' && eventBelongsTo(e, userId, openid))
     return list.slice().sort((a, b) => b.createdAt - a.createdAt)
   },
 
@@ -999,17 +1115,30 @@ const db = {
     if (!Array.isArray(d.users)) d.users = []
     let updatedCount = 0
 
-    const userMap = new Map()
+    // openid 和 id 分开索引。混在同一个 Map 里时，云端 id 可能撞上另一个人的 openid，把两个人并成一条。
+    const byOpenid = new Map()
+    const byId = new Map()
     d.users.forEach((u) => {
-      if (u.openid) userMap.set(u.openid, u)
-      if (u.id) userMap.set(u.id, u)
+      if (u.openid) byOpenid.set(u.openid, u)
+      if (u.id) byId.set(u.id, u)
     })
 
     cloudUsers.forEach((cu) => {
-      const existing = (cu.openid && userMap.get(cu.openid)) || (cu.id && userMap.get(cu.id))
+      if (!cu || typeof cu !== 'object') return
+      const existing = (cu.openid && byOpenid.get(cu.openid)) || (cu.id && byId.get(cu.id)) || null
+      let openid = cu.openid || (existing && existing.openid) || ''
+      if (existing && existing.openid && openid && openid !== existing.openid) {
+        const owner = byOpenid.get(openid)
+        if (owner && owner !== existing) openid = existing.openid
+      }
+      let id = (existing && existing.id) || cu.id || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const idOwner = id && byId.get(id)
+      if (idOwner && idOwner !== existing) {
+        id = (existing && existing.id) || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      }
       const cleaned = {
-        id: cu.id || (existing && existing.id) || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        openid: cu.openid || (existing && existing.openid) || '',
+        id,
+        openid,
         nickname: cu.nickname || (existing && existing.nickname) || '考生',
         realName: cu.realName || (existing && existing.realName) || '',
         className: cu.className || (existing && existing.className) || '',
@@ -1018,7 +1147,7 @@ const db = {
         avatarText: cu.avatarText || (cu.realName ? cu.realName[0] : (existing && existing.avatarText) || '考'),
         avatarUrl: cu.avatarUrl || (existing && existing.avatarUrl) || '',
         isProfileCompleted: Boolean(cu.isProfileCompleted || (cu.realName && cu.className && (cu.phone || cu.displayPhone))),
-        isExamUnlocked: Boolean(cu.isExamUnlocked || (existing && existing.isExamUnlocked)),
+        isExamUnlocked: true,
         examUnlockCode: cu.examUnlockCode || cu.boundCode || (existing && existing.examUnlockCode) || null,
         examUnlockedAt: cu.examUnlockedAt || cu.boundAt || (existing && existing.examUnlockedAt) || null,
         createdAt: cu.createdAt || (existing && existing.createdAt) || Date.now(),
@@ -1033,11 +1162,15 @@ const db = {
       }
 
       if (existing) {
+        const previousOpenid = existing.openid
         Object.assign(existing, cleaned)
+        if (previousOpenid && previousOpenid !== existing.openid) byOpenid.delete(previousOpenid)
+        if (existing.openid) byOpenid.set(existing.openid, existing)
+        if (existing.id) byId.set(existing.id, existing)
       } else {
         d.users.push(cleaned)
-        if (cleaned.openid) userMap.set(cleaned.openid, cleaned)
-        userMap.set(cleaned.id, cleaned)
+        if (cleaned.openid) byOpenid.set(cleaned.openid, cleaned)
+        if (cleaned.id) byId.set(cleaned.id, cleaned)
       }
       updatedCount++
     })
@@ -1205,9 +1338,250 @@ const db = {
     return (data.students && data.students[sid]) || null
   },
 
-  getCollegesMeta() {
+  /**
+   * 学号查询，可选带上姓名做一致性校验。
+   * 姓名没传时保持原行为（直接返回新生档案）。
+   * 姓名对不上时不返回档案，避免把同学的学院班级回给填错学号的人。
+   */
+  lookupFreshmanChecked(studentId, realName) {
+    const student = this.lookupFreshman(studentId)
+    if (!student) {
+      return {
+        found: false,
+        nameMatched: false,
+        fillMode: 'manual',
+        student: null,
+        message: '未在2026级新生名单中找到该学号。请核对学号；如果是大二、大三或大四，请手动填写学院、专业、班级和校区。',
+      }
+    }
+    const provided = normalizeRealName(realName)
+    if (!provided) {
+      return {
+        found: true,
+        nameMatched: null,
+        fillMode: 'roster',
+        student,
+        message: '已找到该学号。填写姓名后会再核对是不是你本人，并自动带出学院、专业、班级和校区。',
+      }
+    }
+    if (normalizeRealName(student.realName) !== provided) {
+      return {
+        found: true,
+        nameMatched: false,
+        fillMode: 'roster',
+        student: null,
+        message: '这个学号已在2026级新生名单中，但和你填的姓名对不上。请核对学号和姓名，避免填成同学的学号。',
+      }
+    }
+    return {
+      found: true,
+      nameMatched: true,
+      fillMode: 'roster',
+      student: {
+        studentId: student.studentId,
+        realName: student.realName,
+        className: student.className,
+        major: student.major || '',
+        college: student.college || '',
+        campus: student.campus || '',
+        grade: student.grade || '2026级',
+      },
+      message: '已匹配到你的学院、专业、班级和校区',
+    }
+  },
+
+  normalizeGradeInput(input, rosterGrade) {
+    if (rosterGrade) return String(rosterGrade).trim()
+    const text = String(input || '').trim()
+    const aliases = {
+      大一: '2026级',
+      大二: '2025级',
+      大三: '2024级',
+      大四: '2023级',
+    }
+    return aliases[text] || text
+  },
+
+  _profileFormMeta: null,
+  getProfileFormMeta() {
+    if (this._profileFormMeta) return this._profileFormMeta
     const data = this._loadFreshmenData()
-    return Array.isArray(data.colleges) ? data.colleges : []
+    const rosterColleges = Array.isArray(data.colleges) ? data.colleges : []
+    const students = data.students && typeof data.students === 'object' ? data.students : {}
+
+    const classPrefix = (name) => String(name || '').trim().replace(/(?:-\d+)?$/, '').replace(/\d+$/, '')
+    const classGrade = (name) => {
+      const matched = String(name || '').match(/(\d{2})\d?(?:-\d+)?$/)
+      return matched ? `20${matched[1]}级` : ''
+    }
+    const gradeMeta = {
+      '2026级': { label: '大一', fillMode: 'roster' },
+      '2025级': { label: '大二', fillMode: 'manual' },
+      '2024级': { label: '大三', fillMode: 'manual' },
+      '2023级': { label: '大四', fillMode: 'manual' },
+    }
+    // 新生名单里没有的旧班名前缀，按专业简称归到现有学院，方便大二到大四手选。
+    const extraPrefixCollege = {
+      B酒店: '人文社会科学学院',
+      F中文: '人文社会科学学院',
+      Y中文: '人文社会科学学院',
+      B日语: '外国语学院',
+      Y翻译: '外国语学院',
+      Y会计: '经济管理学院',
+      Y国商: '经济管理学院',
+      B信管: '经济管理学院',
+      B物管: '经济管理学院',
+      B电商: '经济管理学院',
+      F国贸: '经济管理学院',
+      Y信息: '信息工程学院、华为信息与网络技术学院、西伏河人工智能学院（合署）',
+      Y化工: '化学化工学院、应急管理与安全工程学院（合署）',
+      Y土木: '土木工程学院',
+      Y工管: '土木工程学院',
+      B建筑: '土木工程学院',
+      B建能: '土木工程学院',
+      B电建: '电气工程学院、新能源学院（合署）',
+      Y机械: '机械工程学院、优集学院(合署)',
+      B机械: '机械工程学院、优集学院(合署)',
+      S机电: '机械工程学院、优集学院(合署)',
+      Y智能: '机械工程学院、优集学院(合署)',
+      Y交通: '材料科学与工程学院',
+      Y材化: '材料科学与工程学院',
+      Y材料: '材料科学与工程学院',
+      Y纳米: '材料科学与工程学院',
+      B材物: '材料科学与工程学院',
+      Y环科: '环境科学与工程学院、卓越环保学院（合署）',
+      Y资环: '环境科学与工程学院、卓越环保学院（合署）',
+      Y生物: '海洋与生物工程学院',
+      Y食品: '海洋与生物工程学院',
+      B海洋: '海洋与生物工程学院',
+      Y能动: '汽车工程学院、盐城悦达汽车学院（合署）',
+      C车辆: '汽车工程学院、盐城悦达汽车学院（合署）',
+      D汽车: '汽车工程学院、盐城悦达汽车学院（合署）',
+      Y设艺: '设计艺术学院',
+    }
+
+    const prefixCollege = new Map()
+    rosterColleges.forEach((item) => {
+      ;(item.classes || []).forEach((cls) => {
+        const prefix = classPrefix(cls)
+        if (prefix && !prefixCollege.has(prefix)) prefixCollege.set(prefix, item.college)
+      })
+    })
+    Object.keys(extraPrefixCollege).forEach((prefix) => {
+      if (!prefixCollege.has(prefix)) prefixCollege.set(prefix, extraPrefixCollege[prefix])
+    })
+
+    let officialClasses = []
+    try {
+      const classFile = path.join(__dirname, 'tools', 'official_classes.json')
+      if (fs.existsSync(classFile)) {
+        const parsed = JSON.parse(fs.readFileSync(classFile, 'utf8'))
+        if (Array.isArray(parsed)) officialClasses = parsed
+      }
+    } catch (err) {
+      console.warn('[DB] 读取官方班级列表失败:', err.message)
+    }
+
+    const classesByCollege = new Map()
+    const majorsByCollege = new Map()
+    const ensureCollege = (college) => {
+      if (!classesByCollege.has(college)) classesByCollege.set(college, new Set())
+      if (!majorsByCollege.has(college)) majorsByCollege.set(college, new Set())
+    }
+    rosterColleges.forEach((item) => ensureCollege(item.college))
+
+    const addClass = (college, cls) => {
+      const name = String(cls || '').trim()
+      if (!college || !name) return
+      ensureCollege(college)
+      classesByCollege.get(college).add(name)
+    }
+    rosterColleges.forEach((item) => {
+      ;(item.classes || []).forEach((cls) => addClass(item.college, cls))
+    })
+    officialClasses.forEach((cls) => {
+      const college = prefixCollege.get(classPrefix(cls))
+      if (college) addClass(college, cls)
+    })
+    Object.values(students).forEach((student) => {
+      if (!student || !student.college) return
+      ensureCollege(student.college)
+      if (student.major) majorsByCollege.get(student.college).add(student.major)
+      if (student.className) addClass(student.college, student.className)
+    })
+
+    const campuses = new Set(['南校区', '北校区'])
+    Object.values(students).forEach((student) => {
+      if (student && student.campus) campuses.add(student.campus)
+    })
+
+    const colleges = rosterColleges.map((item) => {
+      const classNames = Array.from(classesByCollege.get(item.college) || []).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      const classesByGrade = {}
+      classNames.forEach((cls) => {
+        const grade = classGrade(cls) || '其他'
+        if (!classesByGrade[grade]) classesByGrade[grade] = []
+        classesByGrade[grade].push(cls)
+      })
+      return {
+        college: item.college,
+        majors: Array.from(majorsByCollege.get(item.college) || []).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+        classes: classNames,
+        classesByGrade,
+      }
+    })
+
+    const gradeSet = new Set(Object.keys(gradeMeta))
+    colleges.forEach((item) => {
+      Object.keys(item.classesByGrade).forEach((grade) => {
+        if (grade && grade !== '其他') gradeSet.add(grade)
+      })
+    })
+    const grades = Array.from(gradeSet)
+      .sort((a, b) => b.localeCompare(a, 'zh-CN'))
+      .map((grade) => ({
+        grade,
+        label: (gradeMeta[grade] && gradeMeta[grade].label) || grade,
+        fillMode: (gradeMeta[grade] && gradeMeta[grade].fillMode) || 'manual',
+      }))
+
+    this._profileFormMeta = {
+      colleges,
+      campuses: Array.from(campuses),
+      grades,
+    }
+    return this._profileFormMeta
+  },
+
+  getCollegesMeta() {
+    return this.getProfileFormMeta().colleges
+  },
+
+  findProfileConflict({ phone, studentId, exceptUserId } = {}) {
+    const d = loadDb()
+    const sid = String(studentId || '').trim()
+    const ph = String(phone || '').trim()
+    const except = exceptUserId || ''
+    const current = except ? d.users.find((u) => u.id === except) : null
+    if (sid) {
+      const currentSid = current ? String(current.studentId || '').trim() : ''
+      if (sid !== currentSid) {
+        const other = d.users.find((u) => u.id !== except && String(u.studentId || '').trim() === sid)
+        if (other) {
+          return { field: 'studentId', message: '该学号已绑定其他微信账号，请核对是否填错学号' }
+        }
+      }
+    }
+    if (ph) {
+      const currentPhone = current ? String(current.phone || '').trim() : ''
+      if (ph !== currentPhone) {
+        const other = d.users.find((u) => u.id !== except && String(u.phone || '').trim() === ph)
+        if (other) {
+          return { field: 'phone', message: '该手机号已绑定其他微信账号，请核对是否填错手机号' }
+        }
+      }
+    }
+    return null
   },
 
   /**
@@ -1231,10 +1605,13 @@ const db = {
       if (!/^\d{8,14}$/.test(sid) || /^(\d)\1{6,}$/.test(sid)) {
         return { valid: false, message: '请输入正确的盐城工学院学号（如 260101011001）' }
       }
-      if (grade === '2026级' || sid.startsWith('26')) {
+      if (grade === '2026级' || grade === '大一' || sid.startsWith('26')) {
         const matched = this.lookupFreshman(sid)
-        if (matched && matched.realName && matched.realName !== name) {
-          return { valid: false, message: `学号 ${sid} 与新生档案姓名不符，请确认学号是否正确` }
+        if (matched && matched.realName && normalizeRealName(matched.realName) !== normalizeRealName(name)) {
+          return {
+            valid: false,
+            message: '这个学号已在2026级新生名单中，但和你填的姓名对不上。请核对学号和姓名，避免填成同学的学号。',
+          }
         }
       }
     }
@@ -1500,13 +1877,17 @@ const db = {
 
   // ───────────────────────── 宿舍电费监控与低电费预警存储 ─────────────────────────
   saveUserDorm(userKey, dormInfo = {}) {
-    if (!userKey) return null
+    const cleanKey = String(userKey || '').trim()
+    // dorm_ 开头是旧的按房间共用键，继续写入会让同寝室的人互相覆盖余额和预警。
+    if (!cleanKey || cleanKey.startsWith('dorm_')) return null
     const d = loadDb()
-    if (!d.userDorms || typeof d.userDorms !== 'object') d.userDorms = {}
-    const cleanKey = String(userKey).trim()
+    if (!d.userDorms || typeof d.userDorms !== 'object' || Array.isArray(d.userDorms)) d.userDorms = {}
     const prev = d.userDorms[cleanKey] || {}
+    const prevOpenid = String(prev.openid || '').trim()
+    const nextOpenid = dormInfo.openid ? String(dormInfo.openid).trim() : ''
+    const samePerson = !prevOpenid || !nextOpenid || prevOpenid === nextOpenid
     d.userDorms[cleanKey] = {
-      ...prev,
+      ...(samePerson ? prev : {}),
       ...dormInfo,
       userKey: cleanKey,
       updatedAt: Date.now(),
@@ -1516,10 +1897,11 @@ const db = {
   },
 
   getUserDorm(userKey) {
-    if (!userKey) return null
+    const cleanKey = String(userKey || '').trim()
+    if (!cleanKey || cleanKey.startsWith('dorm_')) return null
     const d = loadDb()
     if (!d.userDorms || typeof d.userDorms !== 'object') return null
-    return d.userDorms[String(userKey).trim()] || null
+    return d.userDorms[cleanKey] || null
   },
 
   getAllUserDorms() {
