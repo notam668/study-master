@@ -97,7 +97,7 @@ test('per-user finance session isolation', async (t) => {
       assert.equal(electricity.getUserSession('openid-aaa').jsessionId, TICKET_A)
       assert.equal(electricity.getUserSession('openid-bbb').jsessionId, TICKET_B2)
       assert.equal(electricity.getSessionStatus().sessionPrefix, 'sharedfb...')
-      assert.equal(electricity.getUserSession('openid-aaa').sessionPrefix, 'aaaaaaaa...')
+      assert.equal(electricity.getUserSession('openid-aaa').sessionPrefix, 'aaaaaaa1...')
     })
 
     await t.test('balance query uses each user ticket and leaves the shared ticket alone', async () => {
@@ -346,12 +346,12 @@ test('per-user finance session isolation', async (t) => {
         const readMissing = await requestJson(port, 'GET', '/api/electricity/session?userKey=openid-missing')
 
         assert.equal(savedA.status, 200)
-        assert.equal(savedA.json.data.sessionPrefix, 'aaaaaaaa...')
+        assert.equal(savedA.json.data.sessionPrefix, 'aaaaaaa1...')
         assert.equal(savedA.json.data.fallback, 'user')
         assert.equal(savedA.raw.includes(TICKET_A), false)
         assert.equal(savedB.raw.includes(TICKET_B), false)
         assert.equal(replacedB.json.data.sessionPrefix, 'ccccccc3...')
-        assert.equal(readA.json.data.sessionPrefix, 'aaaaaaaa...')
+        assert.equal(readA.json.data.sessionPrefix, 'aaaaaaa1...')
         assert.equal(readA.json.data.hasUserSession, true)
         assert.equal(readA.raw.includes(TICKET_A), false)
         assert.equal(readA.raw.includes(SHARED_TICKET), false)
