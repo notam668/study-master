@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0c10" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#F8FAFC" />
+  <meta name="color-scheme" content="light" />
   <title>盐小工校园通 · 运营管理后台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.12.0/dist/tabler-icons.min.css" />
-  <link rel="stylesheet" href="/css/admin.css?v=mobile429" />
+  <link rel="stylesheet" href="/css/admin.css?v=dense1" />
 </head>
-<body class="layout-fluid theme-dark" data-bs-theme="dark">
+<body class="layout-fluid" data-bs-theme="light">
   <div class="page">
     <div id="yxSidebarBackdrop" class="yx-sidebar-backdrop" onclick="closeAdminDrawer()" aria-hidden="true"></div>
     <!-- Sidebar -->
-    <aside id="yxSidebar" class="navbar navbar-vertical navbar-expand-lg yx-sidebar" data-bs-theme="dark" aria-label="主导航">
+    <aside id="yxSidebar" class="navbar navbar-vertical navbar-expand-lg yx-sidebar" data-bs-theme="light" aria-label="主导航">
       <div class="container-fluid yx-sidebar-inner">
         <h1 class="navbar-brand navbar-brand-autodark yx-sidebar-brand">
           <span class="d-flex align-items-center gap-2">
@@ -76,50 +76,32 @@
             </li>
                       </ul>
         </div>
-        <div class="sidebar-footer yx-sidebar-footer">
-          <button type="button" class="btn btn-outline-primary w-100" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
-            <i class="ti ti-cloud-download me-1"></i>从云托管同步
-          </button>
-          <button type="button" class="btn btn-ghost-secondary w-100" onclick="refreshCurrentTab(true)">
-            <i class="ti ti-refresh me-1"></i>刷新本页
-          </button>
-        </div>
       </div>
     </aside>
 
     <div class="page-wrapper">
       <header class="navbar navbar-expand-md d-print-none yx-topbar">
         <div class="container-xl">
-          <div class="d-flex align-items-center gap-2 min-w-0 yx-topbar-left">
+          <div class="d-flex align-items-center gap-2 min-w-0 yx-topbar-brand">
             <button type="button" class="yx-menu-btn" id="yxMenuBtn" onclick="toggleAdminDrawer()" aria-label="打开菜单" aria-controls="yxSidebar" aria-expanded="false">
               <i class="ti ti-menu-2" style="font-size:1.25rem"></i>
             </button>
-            <div class="min-w-0 yx-topbar-titles">
-              <div class="yx-topbar-title text-truncate">运营管理中心</div>
-              <div class="yx-topbar-sub d-none d-lg-block text-truncate">盐小工校园通 · 真实运营数据</div>
-            </div>
+            <span class="yx-mark" aria-hidden="true">盐</span>
+            <div class="yx-topbar-title">盐小工校园通</div>
           </div>
-          <nav class="yx-capsule-nav" id="yxCapsuleNav" aria-label="主导航胶囊">
-            <a href="#dashboard" id="cap-dashboard" class="active" onclick="switchTab('dashboard');return false;">仪表盘</a>
-            <a href="#colleges" id="cap-colleges" onclick="switchTab('colleges');return false;">学院</a>
-            <a href="#classes" id="cap-classes" onclick="switchTab('classes');return false;">班级</a>
-            <a href="#users" id="cap-users" onclick="switchTab('users');return false;">考生</a>
-            <a href="#exams" id="cap-exams" onclick="switchTab('exams');return false;">模考</a>
-            <a href="#announcement" id="cap-announcement" onclick="switchTab('announcement');return false;">公告</a>
-            <a href="#reminder" id="cap-reminder" onclick="switchTab('reminder');return false;">提醒</a>
-                      </nav>
           <div class="admin-header-actions">
-            <button type="button" class="yx-util-btn" onclick="refreshCurrentTab(true)" title="刷新" aria-label="刷新"><i class="ti ti-refresh"></i></button>
-            <button type="button" class="yx-util-btn d-none d-md-inline-flex" onclick="exportUsersCsv()" title="导出考生" aria-label="导出考生"><i class="ti ti-download"></i></button>
-            <button type="button" class="yx-util-btn" onclick="adminLogout()" title="退出登录" aria-label="退出登录"><i class="ti ti-logout"></i></button>
+            <button type="button" class="btn btn-primary" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
+              <i class="ti ti-cloud-download" aria-hidden="true"></i><span class="yx-btn-label">从云托管同步</span>
+            </button>
+            <button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">
+              <i class="ti ti-refresh" aria-hidden="true"></i><span class="yx-btn-label">刷新</span>
+            </button>
+            <button type="button" class="btn btn-ghost" onclick="adminLogout()">
+              <i class="ti ti-logout" aria-hidden="true"></i><span class="yx-btn-label">退出</span>
+            </button>
           </div>
         </div>
       </header>
-      <div class="yx-top-meta" id="yxTopMeta" aria-live="polite">
-        <span class="yx-top-meta-label">运营后台</span>
-        <span class="yx-top-meta-chip" id="yxPassChip">及格率 <strong id="yxPassChipVal">--</strong>%</span>
-        <span class="yx-top-meta-chip muted" id="yxActiveChip">今日活跃 <strong id="yxActiveChipVal">--</strong></span>
-      </div>
 
       <div class="page-body">
         <div class="container-xl">
@@ -444,16 +426,16 @@
   <div id="adminAuthModal" role="dialog" aria-modal="true" aria-labelledby="adminAuthTitle">
     <div class="yx-login-card">
       <div class="yx-login-mark" aria-hidden="true">盐</div>
-      <h2 id="adminAuthTitle">运营管理中心</h2>
-      <p class="yx-login-desc">盐小工校园通 · 访问已受保护。请输入管理员密码继续。</p>
+      <h2 id="adminAuthTitle">盐小工校园通</h2>
+      <p class="yx-login-desc">盐小工校园通运营管理中心。访问已受保护，请输入管理员密码继续。</p>
       <div class="mb-3">
         <label class="form-label" for="adminPasswordInput">管理员密码</label>
         <input type="password" id="adminPasswordInput" class="form-control" placeholder="请输入密码" autocomplete="current-password" />
       </div>
-      <div class="mb-3 form-check">
-        <input class="form-check-input" type="checkbox" id="rememberPasswordCheck" />
-        <label class="form-check-label" for="rememberPasswordCheck">在本机记住登录</label>
-      </div>
+      <label class="yx-check" for="rememberPasswordCheck">
+        <input type="checkbox" id="rememberPasswordCheck" />
+        <span>在本机记住登录</span>
+      </label>
       <div id="adminAuthError" class="text-danger small mb-2 hidden" style="display:none" role="alert"></div>
       <button type="button" id="adminAuthSubmitBtn" class="btn btn-primary w-100" onclick="handleAuthSubmit(event)">进入后台</button>
     </div>
@@ -468,6 +450,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
-  <script src="/js/admin-app.js?v=mobile429"></script>
+  <script src="/js/admin-app.js?v=dense1"></script>
 </body>
 </html>
