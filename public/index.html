@@ -94,14 +94,15 @@
     <div class="page-wrapper">
       <header class="navbar navbar-expand-md d-print-none">
         <div class="container-xl">
-          <div class="navbar-nav flex-row order-md-last gap-2">
-            <button class="btn btn-outline-secondary btn-sm" onclick="exportUsersCsv()"><i class="ti ti-download"></i> 导出考生</button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="exportExamsCsv()"><i class="ti ti-download"></i> 导出模考</button>
+          <div class="navbar-nav flex-row order-md-last gap-2 admin-header-actions">
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportUsersCsv()"><i class="ti ti-download"></i><span class="d-none d-sm-inline"> 导出考生</span></button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportExamsCsv()"><i class="ti ti-download"></i><span class="d-none d-sm-inline"> 导出模考</span></button>
+            <button class="btn btn-ghost-secondary btn-sm" type="button" onclick="adminLogout()" title="退出登录"><i class="ti ti-logout"></i></button>
           </div>
-          <div class="d-flex align-items-center">
-            <div>
-              <div class="fw-bold">盐小工校园通 · 运营管理中心</div>
-              <div class="text-secondary small">学生档案 · 学院/班级分类 · 学情与运营 · 数据以云托管/MySQL 为准</div>
+          <div class="d-flex align-items-center min-w-0">
+            <div class="min-w-0">
+              <div class="fw-bold text-truncate">盐小工校园通 · 运营管理中心</div>
+              <div class="text-secondary small d-none d-md-block">学生档案 · 学院/班级分类 · 学情与运营 · 数据以云托管/MySQL 为准</div>
             </div>
           </div>
         </div>
@@ -383,8 +384,8 @@
           <input class="form-check-input" type="checkbox" id="rememberPasswordCheck" />
           <label class="form-check-label" for="rememberPasswordCheck">在本机记住登录（localStorage）</label>
         </div>
-        <div id="adminAuthError" class="text-danger small mb-2" style="display:none"></div>
-        <button id="adminAuthSubmitBtn" class="btn btn-primary w-100">进入后台</button>
+        <div id="adminAuthError" class="text-danger small mb-2 hidden" style="display:none" role="alert"></div>
+        <button type="button" id="adminAuthSubmitBtn" class="btn btn-primary w-100" onclick="handleAuthSubmit(event)">进入后台</button>
       </div>
     </div>
   </div>

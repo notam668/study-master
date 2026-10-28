@@ -26,3 +26,50 @@
   width: 280px; border: 8px solid #1e293b; border-radius: 28px;
   background: #f8fafc; overflow: hidden; min-height: 420px;
 }
+
+
+/* —— 手机端适配（≤768 / ≤390） —— */
+html, body { max-width: 100%; overflow-x: hidden; }
+.page { min-width: 0; }
+.page-wrapper { min-width: 0; max-width: 100%; }
+.page-body .container-xl { padding-left: 0.75rem; padding-right: 0.75rem; }
+.table-responsive {
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.table-responsive > .table { margin-bottom: 0; }
+#adminAuthModal .card { width: min(420px, 92vw); margin: 1rem; }
+#adminAuthModal .card-body { padding: 1.25rem !important; }
+#toast { left: 0.75rem; right: 0.75rem; top: 0.75rem; min-width: 0; max-width: none; }
+
+@media (max-width: 991.98px) {
+  .navbar-vertical.navbar-expand-lg {
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+  }
+  .navbar-vertical .navbar-collapse {
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+  }
+  header.navbar .container-xl {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    row-gap: 0.35rem;
+  }
+  .admin-header-actions { flex-wrap: wrap; }
+  .preview-phone { width: 100%; max-width: 280px; margin: 0 auto; }
+  .row-cards > [class*="col-"] { min-width: 0; }
+  .card-body { overflow-wrap: anywhere; }
+  .btn { white-space: nowrap; }
+}
+
+@media (max-width: 390px) {
+  .page-body .container-xl { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .navbar-brand .avatar { display: none; }
+  .h1, .page-title { font-size: 1.15rem; }
+  .card-title { font-size: 0.95rem; }
+  .table th, .table td { padding: 0.4rem 0.5rem; font-size: 12px; }
+  #adminAuthModal h2 { font-size: 1.1rem; }
+}

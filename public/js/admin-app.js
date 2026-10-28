@@ -32,9 +32,12 @@
       if (errBox) {
         if (errMsg) {
           errBox.innerText = errMsg
-          errBox.classList.remove('hidden')
+          errBox.classList.remove('hidden', 'd-none')
+          errBox.style.display = 'block'
         } else {
+          errBox.innerText = ''
           errBox.classList.add('hidden')
+          errBox.style.display = 'none'
         }
       }
       const input = document.getElementById('adminPasswordInput')
@@ -51,7 +54,11 @@
         modal.style.display = 'none'
       }
       const errBox = document.getElementById('adminAuthError')
-      if (errBox) errBox.classList.add('hidden')
+      if (errBox) {
+        errBox.classList.add('hidden')
+        errBox.style.display = 'none'
+        errBox.innerText = ''
+      }
     }
 
     function togglePasswordVisibility() {
@@ -72,7 +79,8 @@
       if (!password) {
         if (errBox) {
           errBox.innerText = '请输入管理员密码'
-          errBox.classList.remove('hidden')
+          errBox.classList.remove('hidden', 'd-none')
+          errBox.style.display = 'block'
         }
         return
       }
@@ -98,18 +106,20 @@
         } else {
           if (errBox) {
             errBox.innerText = json.message || '密码错误，请重新输入'
-            errBox.classList.remove('hidden')
+            errBox.classList.remove('hidden', 'd-none')
+            errBox.style.display = 'block'
           }
         }
       } catch (err) {
         if (errBox) {
           errBox.innerText = '验证连接异常，请重试: ' + err.message
-          errBox.classList.remove('hidden')
+          errBox.classList.remove('hidden', 'd-none')
+          errBox.style.display = 'block'
         }
       } finally {
         if (btn) {
           btn.disabled = false
-          btn.innerHTML = '验证并进入控制台'
+          btn.innerHTML = '进入后台'
         }
       }
     }
@@ -160,6 +170,19 @@
 
     // 页面加载入口
     document.addEventListener('DOMContentLoaded', async () => {
+      // 登录按钮 / 回车键绑定（此前 HTML 无 onclick、JS 未 addEventListener，导致点「进入后台」无反应）
+      const authBtn = document.getElementById('adminAuthSubmitBtn')
+      if (authBtn) authBtn.addEventListener('click', handleAuthSubmit)
+      const authInput = document.getElementById('adminPasswordInput')
+      if (authInput) {
+        authInput.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') {
+            ev.preventDefault()
+            handleAuthSubmit(ev)
+          }
+        })
+      }
+
       // 检查 hash
       const hash = window.location.hash.replace('#', '')
       if (['dashboard', 'colleges', 'classes', 'users', 'exams', 'announcement', 'reminder', 'codes'].includes(hash)) {
@@ -218,6 +241,16 @@
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'))
       const activeContent = document.getElementById(`tab-${tabId}`)
       if (activeContent) activeContent.classList.add('active')
+
+      // 窄屏：点导航后收起侧栏
+      try {
+        const menu = document.getElementById('sidebar-menu')
+        if (menu && window.innerWidth < 992 && menu.classList.contains('show')) {
+          menu.classList.remove('show')
+          const toggler = document.querySelector('.navbar-vertical .navbar-toggler')
+          if (toggler) toggler.setAttribute('aria-expanded', 'false')
+        }
+      } catch (_) {}
 
       // 按需加载特定模块
       if (tabId === 'announcement') loadAnnouncementData()
@@ -1051,3 +1084,9 @@
       alert(`【考生详情档案】\n真实姓名: ${user.realName || '--'}\n所在班级: ${user.className || '--'}\n电话号码: ${user.phone || '--'}\n学号: ${user.studentId || '--'}\n累计登录: ${user.loginCount || 1} 次\n已考次数: ${user.examCount || 0} 次\n最高得分: ${user.maxScore || 0} 分`)
     }
   
+    // 导出给 HTML onclick / 调试
+    window.handleAuthSubmit = handleAuthSubmit
+    window.adminLogout = adminLogout
+    window.showAuthModal = showAuthModal
+    window.hideAuthModal = hideAuthModal
+    window.togglePasswordVisibility = togglePasswordVisibility
