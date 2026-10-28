@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const config = require('./config')
+const mysqlStore = require('./db-mysql')
 
 const DATA_DIR = config.dataDir
 try {
@@ -34,6 +35,8 @@ const initialData = {
   reminderLogs: [],    // 上课提醒下发日志 { id, openid, className, courseName, startAt, remindAt, status, errcode, errmsg, createdAt }
   reminderConfig: null, // 上课提醒全局配置，结构见 services/reminderService.js；null = 用内置默认值
   userSchedules: {},   // 用户保存的课表日程：key 为 userKey (userId / openid / studentId / phone) -> { scheduleData, updatedAt }
+
+  practiceByUser: {}, // openid -> { banks: { bankId: { wrongBook, progress, states, wrongProgress, wrongStates, updatedAt } } }
 }
 
 // 提醒日志只保留最近 N 条，避免 data/studymaster.json 无限膨胀
@@ -92,6 +95,9 @@ function loadDb() {
       }
       if (!memoryDb.userSchedules || typeof memoryDb.userSchedules !== 'object') {
         memoryDb.userSchedules = {}
+      }
+      if (!memoryDb.practiceByUser || typeof memoryDb.practiceByUser !== 'object') {
+        memoryDb.practiceByUser = {}
       }
       // 数据自动纠偏归正
       let userUpdated = false
@@ -167,6 +173,7 @@ function saveDb() {
       const tmpFile = `${DB_FILE}.tmp`
       fs.writeFileSync(tmpFile, JSON.stringify(memoryDb, null, 2), 'utf8')
       fs.renameSync(tmpFile, DB_FILE)
+      try { mysqlStore.persist(memoryDb) } catch (e) { console.error('[MySQL] 入队失败:', e.message) }
     } catch (err) {
       console.error('持久化写入失败:', err)
     }
@@ -179,6 +186,7 @@ function flushSync() {
     const tmpFile = `${DB_FILE}.tmp`
     fs.writeFileSync(tmpFile, JSON.stringify(memoryDb, null, 2), 'utf8')
     fs.renameSync(tmpFile, DB_FILE)
+    mysqlStore.flush().catch(e => console.error('[MySQL] 强制写入失败:', e.message))
   } catch (err) {
     console.error('强制同步写入失败:', err)
   }
@@ -216,7 +224,7 @@ const db = {
         avatarText: extraInfo.realName ? extraInfo.realName.trim().charAt(0) : '',
         avatarUrl: extraInfo.avatarUrl || '',
         isProfileCompleted: Boolean(extraInfo.realName && extraInfo.className && phone),
-        isExamUnlocked: false,
+        isExamUnlocked: true, // 2026-10-27 起默认解锁，废除激活码
         examUnlockCode: null,
         examUnlockedAt: null,
         createdAt: now,
@@ -612,13 +620,17 @@ const db = {
           boundAt = matched.usedAt
         }
       }
-      const isExamUnlocked = Boolean(u.isExamUnlocked || boundCode)
+      const isExamUnlocked = true // 废除激活码：一律视为已解锁
 
+      const resolvedCollege = this.resolveCollege(u.college, u.className)
       return {
         ...u,
         phone: displayPhone,
         rawPhone: u.phone || '',
         studentId: u.studentId || '',
+        college: resolvedCollege,
+        grade: (u.grade || '').trim(),
+        major: (u.major || '').trim(),
         isProfileCompleted: Boolean(u.realName && u.className && displayPhone),
         isExamUnlocked,
         boundCode: boundCode || null,
@@ -667,6 +679,46 @@ const db = {
       maxScore: c.maxScore,
     })).sort((a, b) => b.studentCount - a.studentCount)
 
+    // college stats (prefer user.college, else derive from class via freshmen map)
+    const collegeGroupMap = {}
+    enrichedUsers.forEach(u => {
+      const collegeName = (u.college || '').trim() || '未归属学院'
+      if (!collegeGroupMap[collegeName]) {
+        collegeGroupMap[collegeName] = {
+          college: collegeName,
+          studentCount: 0,
+          completedCount: 0,
+          examCount: 0,
+          totalScoreSum: 0,
+          maxScore: 0,
+          classSet: new Set(),
+        }
+      }
+      const group = collegeGroupMap[collegeName]
+      group.studentCount++
+      if (u.isProfileCompleted) group.completedCount++
+      group.examCount += u.examCount
+      group.totalScoreSum += u.avgScore * u.examCount
+      if (u.maxScore > group.maxScore) group.maxScore = u.maxScore
+      const cn = (u.className || '').trim()
+      if (cn) group.classSet.add(cn)
+    })
+
+    const collegeStats = Object.values(collegeGroupMap).map(c => ({
+      college: c.college,
+      studentCount: c.studentCount,
+      completedCount: c.completedCount,
+      completedRate: Math.round((c.completedCount / c.studentCount) * 100),
+      examCount: c.examCount,
+      avgScore: c.examCount > 0 ? Math.round(c.totalScoreSum / c.examCount) : 0,
+      maxScore: c.maxScore,
+      classCount: c.classSet.size,
+    })).sort((a, b) => {
+      if (a.college === '未归属学院') return 1
+      if (b.college === '未归属学院') return -1
+      return b.studentCount - a.studentCount
+    })
+
     // 全量模考成绩明细单（按交卷时间严格倒序取最近 200 条）
     const allExams = examEvents.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 200).map(e => {
       const user = userMap.get(e.userId) || (e.openid ? userMap.get(e.openid) : null)
@@ -678,6 +730,7 @@ const db = {
         userId: e.userId,
         realName: (user && user.realName) || (user && user.nickname) || '未知考生',
         className: (user && user.className) || '--',
+        college: (user && this.resolveCollege(user.college, user.className)) || '--',
         phone: (user && (user.phone || user.studentId)) || '--',
         bankId: e.bankId || 'default',
         bankTitle: e.bankTitle || '默认题库',
@@ -745,6 +798,7 @@ const db = {
       recentLogs,
       users: enrichedUsers,
       classStats,
+      collegeStats,
       allExams,
       activationStats: this.getActivationCodesStats(),
     }
@@ -1018,7 +1072,7 @@ const db = {
         avatarText: cu.avatarText || (cu.realName ? cu.realName[0] : (existing && existing.avatarText) || '考'),
         avatarUrl: cu.avatarUrl || (existing && existing.avatarUrl) || '',
         isProfileCompleted: Boolean(cu.isProfileCompleted || (cu.realName && cu.className && (cu.phone || cu.displayPhone))),
-        isExamUnlocked: Boolean(cu.isExamUnlocked || (existing && existing.isExamUnlocked)),
+        isExamUnlocked: true,
         examUnlockCode: cu.examUnlockCode || cu.boundCode || (existing && existing.examUnlockCode) || null,
         examUnlockedAt: cu.examUnlockedAt || cu.boundAt || (existing && existing.examUnlockedAt) || null,
         createdAt: cu.createdAt || (existing && existing.createdAt) || Date.now(),
@@ -1173,6 +1227,189 @@ const db = {
   /**
    * 读取特定用户的专属课表数据
    */
+
+  /**
+   * 练习/错题本云端存储（按 openid 强隔离）
+   * 结构: practiceByUser[openid].banks[bankId] = {
+   *   wrongBook: [{questionId, addedAt, source, stemPreview?, qType?, deletedAt?}],
+   *   progress, states, wrongProgress, wrongStates, updatedAt, resetAt?
+   * }
+   */
+  _ensurePracticeRoot(d) {
+    if (!d.practiceByUser || typeof d.practiceByUser !== 'object') d.practiceByUser = {}
+    return d.practiceByUser
+  },
+
+  _emptyBankPractice() {
+    return {
+      wrongBook: [],
+      progress: 0,
+      states: {},
+      wrongProgress: 0,
+      wrongStates: {},
+      updatedAt: 0,
+      resetAt: 0,
+    }
+  },
+
+  getPracticeBank(openid, bankId) {
+    const oid = String(openid || '').trim()
+    const bid = String(bankId || '').trim()
+    if (!oid || !bid) return null
+    const d = loadDb()
+    const root = this._ensurePracticeRoot(d)
+    const user = root[oid]
+    if (!user || !user.banks || !user.banks[bid]) {
+      return this._emptyBankPractice()
+    }
+    const raw = user.banks[bid]
+    return {
+      wrongBook: Array.isArray(raw.wrongBook) ? raw.wrongBook : [],
+      progress: typeof raw.progress === 'number' ? raw.progress : 0,
+      states: raw.states && typeof raw.states === 'object' ? raw.states : {},
+      wrongProgress: typeof raw.wrongProgress === 'number' ? raw.wrongProgress : 0,
+      wrongStates: raw.wrongStates && typeof raw.wrongStates === 'object' ? raw.wrongStates : {},
+      updatedAt: Number(raw.updatedAt || 0),
+      resetAt: Number(raw.resetAt || 0),
+    }
+  },
+
+  /**
+   * 合并错题本：按 questionId；带 deletedAt 的墓碑可覆盖旧加入；较新 updatedAt 胜
+   */
+  mergeWrongBook(serverList, clientList, clientUpdatedAt, serverUpdatedAt) {
+    const map = new Map()
+    const put = (e, fallbackTs) => {
+      if (!e || !e.questionId) return
+      const id = String(e.questionId)
+      const ts = Number(e.addedAt || e.deletedAt || fallbackTs || 0)
+      const prev = map.get(id)
+      if (!prev || ts >= Number(prev.addedAt || prev.deletedAt || 0)) {
+        map.set(id, {
+          questionId: id,
+          addedAt: e.deletedAt ? Number(e.addedAt || 0) : Number(e.addedAt || ts || Date.now()),
+          source: e.source || 'manual',
+          stemPreview: e.stemPreview || '',
+          qType: e.qType || '',
+          deletedAt: e.deletedAt ? Number(e.deletedAt) : undefined,
+        })
+        if (!e.deletedAt) delete map.get(id).deletedAt
+        if (e.deletedAt) map.set(id, { ...map.get(id), deletedAt: Number(e.deletedAt) })
+      }
+    }
+    ;(Array.isArray(serverList) ? serverList : []).forEach((e) => put(e, serverUpdatedAt))
+    ;(Array.isArray(clientList) ? clientList : []).forEach((e) => put(e, clientUpdatedAt))
+    const out = []
+    for (const v of map.values()) {
+      if (v.deletedAt && (!v.addedAt || v.deletedAt >= v.addedAt)) continue
+      const { deletedAt, ...rest } = v
+      out.push(rest)
+    }
+    out.sort((a, b) => Number(b.addedAt || 0) - Number(a.addedAt || 0))
+    return out
+  },
+
+  putPracticeBank(openid, bankId, patch = {}) {
+    const oid = String(openid || '').trim()
+    const bid = String(bankId || '').trim()
+    if (!oid || !bid) return { ok: false, reason: 'missing openid/bankId' }
+    const d = loadDb()
+    const root = this._ensurePracticeRoot(d)
+    if (!root[oid] || typeof root[oid] !== 'object') root[oid] = { banks: {} }
+    if (!root[oid].banks || typeof root[oid].banks !== 'object') root[oid].banks = {}
+    const cur = this.getPracticeBank(oid, bid)
+    const clientUpdatedAt = Number(patch.clientUpdatedAt || 0)
+    const now = Date.now()
+
+    let wrongBook = cur.wrongBook
+    if (Array.isArray(patch.wrongBook)) {
+      wrongBook = this.mergeWrongBook(cur.wrongBook, patch.wrongBook, clientUpdatedAt, cur.updatedAt)
+    }
+    if (Array.isArray(patch.wrongBookTombstones)) {
+      wrongBook = this.mergeWrongBook(wrongBook, patch.wrongBookTombstones, clientUpdatedAt, cur.updatedAt)
+    }
+
+    let progress = cur.progress
+    let states = cur.states
+    let wrongProgress = cur.wrongProgress
+    let wrongStates = cur.wrongStates
+    let resetAt = cur.resetAt
+
+    const takeNewerProgress = (mode) => {
+      const isWrong = mode === 'wrong'
+      const hasP = isWrong ? patch.wrongProgress !== undefined : patch.progress !== undefined
+      const hasS = isWrong ? patch.wrongStates !== undefined : patch.states !== undefined
+      if (!hasP && !hasS) return
+      const serverTs = cur.updatedAt
+      if (clientUpdatedAt && serverTs && clientUpdatedAt < serverTs) {
+        // 客户端更旧：不覆盖进度（仍允许错题本并集已在上面处理）
+        return
+      }
+      if (isWrong) {
+        if (hasP) wrongProgress = Number(patch.wrongProgress) || 0
+        if (hasS && patch.wrongStates && typeof patch.wrongStates === 'object') wrongStates = patch.wrongStates
+      } else {
+        if (hasP) progress = Number(patch.progress) || 0
+        if (hasS && patch.states && typeof patch.states === 'object') states = patch.states
+      }
+    }
+    takeNewerProgress('full')
+    takeNewerProgress('wrong')
+
+    if (patch.resetPractice === true) {
+      progress = 0
+      states = {}
+      wrongProgress = 0
+      wrongStates = {}
+      resetAt = now
+    }
+
+    root[oid].banks[bid] = {
+      wrongBook,
+      progress,
+      states,
+      wrongProgress,
+      wrongStates,
+      updatedAt: Math.max(now, clientUpdatedAt || 0, cur.updatedAt || 0),
+      resetAt,
+    }
+    saveDb()
+    return { ok: true, data: this.getPracticeBank(oid, bid) }
+  },
+
+  addWrongBookEntry(openid, bankId, entry) {
+    const cur = this.getPracticeBank(openid, bankId)
+    if (!cur) return { ok: false, reason: 'bad args' }
+    const list = Array.isArray(cur.wrongBook) ? cur.wrongBook.slice() : []
+    const qid = String((entry && entry.questionId) || '')
+    if (!qid) return { ok: false, reason: 'missing questionId' }
+    const now = Date.now()
+    const idx = list.findIndex((e) => e.questionId === qid)
+    const row = {
+      questionId: qid,
+      addedAt: now,
+      source: (entry && entry.source) || 'manual',
+      stemPreview: (entry && entry.stemPreview) || '',
+      qType: (entry && entry.qType) || '',
+    }
+    if (idx >= 0) list[idx] = { ...list[idx], ...row }
+    else list.unshift(row)
+    return this.putPracticeBank(openid, bankId, { wrongBook: list, clientUpdatedAt: now })
+  },
+
+  removeWrongBookEntry(openid, bankId, questionId) {
+    const qid = String(questionId || '')
+    if (!qid) return { ok: false, reason: 'missing questionId' }
+    const now = Date.now()
+    const tomb = [{ questionId: qid, addedAt: 0, deletedAt: now, source: 'manual' }]
+    return this.putPracticeBank(openid, bankId, { wrongBookTombstones: tomb, clientUpdatedAt: now })
+  },
+
+  resetPracticeTraces(openid, bankId) {
+    return this.putPracticeBank(openid, bankId, { resetPractice: true, clientUpdatedAt: Date.now() })
+  },
+
+
   getUserSchedule(userKey) {
     if (!userKey) return null
     const d = loadDb()
@@ -1209,6 +1446,60 @@ const db = {
     const data = this._loadFreshmenData()
     return Array.isArray(data.colleges) ? data.colleges : []
   },
+
+  _normalizeClassKey(className) {
+    let s = String(className || '').trim().toLowerCase()
+    if (!s) return ''
+    s = s.replace(/[\u3000\s]+/g, '')
+    let out = ''
+    for (const ch of s) {
+      const code = ch.charCodeAt(0)
+      if (code >= 0xFF01 && code <= 0xFF5E) out += String.fromCharCode(code - 0xFEE0)
+      else out += ch
+    }
+    return out.replace(/\u73ed$/u, '')
+  },
+
+  _getClassCollegeMaps() {
+    if (this._classCollegeMapsCache) return this._classCollegeMapsCache
+    const exact = Object.create(null)
+    const prefix = Object.create(null)
+    const colleges = this.getCollegesMeta() || []
+    colleges.forEach((c) => {
+      const college = String((c && c.college) || '').trim()
+      if (!college) return
+      ;(c.classes || []).forEach((cl) => {
+        const key = this._normalizeClassKey(cl)
+        if (!key) return
+        exact[key] = college
+        const m = key.match(/^[a-z]?([\u4e00-\u9fff]{2,8})/u)
+        if (m && m[1] && !prefix[m[1]]) prefix[m[1]] = college
+      })
+    })
+    this._classCollegeMapsCache = { exact, prefix }
+    return this._classCollegeMapsCache
+  },
+
+  resolveCollege(college, className) {
+    const filled = String(college || '').trim()
+    if (filled) return filled
+    const key = this._normalizeClassKey(className)
+    if (!key) return ''
+    const maps = this._getClassCollegeMaps()
+    if (maps.exact[key]) return maps.exact[key]
+    const m = key.match(/^[a-z]?([\u4e00-\u9fff]{2,8})/u)
+    if (m && m[1]) {
+      const major = m[1]
+      if (maps.prefix[major]) return maps.prefix[major]
+      const keys = Object.keys(maps.prefix)
+      for (let i = 0; i < keys.length; i++) {
+        const pk = keys[i]
+        if (major.startsWith(pk) || pk.startsWith(major)) return maps.prefix[pk]
+      }
+    }
+    return ''
+  },
+
 
   /**
    * 严格校验用户提交的姓名、学号、手机号、班级，拦截一切敷衍/伪造输入
@@ -1580,6 +1871,27 @@ const db = {
 
   flushSync,
 }
+
+// 启动时初始化持久层：优先用 MySQL（微信云开发），失败自动回退文件存储
+async function initStore() {
+  const res = await mysqlStore.init()
+  if (!res.enabled) return res
+  if (res.doc && typeof res.doc === 'object') {
+    memoryDb = res.doc
+    if (!Array.isArray(memoryDb.users)) memoryDb.users = []
+    if (!Array.isArray(memoryDb.activationCodes)) memoryDb.activationCodes = []
+    if (!memoryDb.userSchedules || typeof memoryDb.userSchedules !== 'object') memoryDb.userSchedules = {}
+    if (!memoryDb.practiceByUser || typeof memoryDb.practiceByUser !== 'object') memoryDb.practiceByUser = {}
+    return { enabled: true, source: 'mysql', users: memoryDb.users.length }
+  }
+  // 空库：把现有文件数据整体灌进去（一次性迁移）
+  loadDb()
+  await mysqlStore.bootstrapFrom(memoryDb)
+  return { enabled: true, source: 'file->mysql', users: memoryDb.users.length }
+}
+
+db.initStore = initStore
+db.mysqlStatus = () => mysqlStore.status()
 
 module.exports = db
 

@@ -1,1718 +1,402 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StudyMaster 综合运营控制台</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#eef2ff',
-              100: '#e0e7ff',
-              500: '#6366f1',
-              600: '#4f46e5',
-              700: '#4338ca',
-            }
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    /* 滚动条美化 */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #f8fafc; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-    /* 手机模拟预览壳 */
-    .phone-mockup {
-      width: 290px;
-      height: 520px;
-      border: 10px solid #1e293b;
-      border-radius: 36px;
-      overflow: hidden;
-      position: relative;
-      box-shadow: 0 20px 40px -15px rgba(0,0,0,0.3);
-    }
-    .phone-notch {
-      width: 110px;
-      height: 18px;
-      background: #1e293b;
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      border-bottom-left-radius: 12px;
-      border-bottom-right-radius: 12px;
-      z-index: 30;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>盐小工校园通 · 运营管理后台</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.12.0/dist/tabler-icons.min.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col font-sans">
-
-  <!-- ============================================================ -->
-  <!-- 管理员访问密码锁屏弹窗（默认覆盖全屏） -->
-  <!-- ============================================================ -->
-  <div id="adminAuthModal" class="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 transition-all duration-200">
-    <div class="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full p-8 text-center relative overflow-hidden">
-      <div class="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center mx-auto mb-4 text-2xl shadow-inner">
-        🔒
-      </div>
-      <h2 class="text-xl font-bold text-slate-900 tracking-tight">StudyMaster 运营管理中心</h2>
-      <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">
-        系统已启用访问权限保护，请输入管理员密码访问后台
-      </p>
-
-      <form id="adminAuthForm" onsubmit="handleAuthSubmit(event)" class="mt-6 space-y-4 text-left">
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1.5">管理员密码</label>
-          <div class="relative">
-            <input 
-              type="password" 
-              id="adminPasswordInput" 
-              placeholder="请输入管理员密码" 
-              autocomplete="current-password"
-              class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-sans tracking-wider"
-              required 
-            />
-            <button 
-              type="button" 
-              onclick="togglePasswordVisibility()" 
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 text-xs"
-              title="显示/隐藏密码"
-            >
-              👁️
+<body class="layout-fluid">
+  <div class="page">
+    <!-- Sidebar -->
+    <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+      <div class="container-fluid">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <h1 class="navbar-brand navbar-brand-autodark">
+          <span class="d-flex align-items-center gap-2">
+            <span class="avatar avatar-sm bg-primary-lt text-primary">盐</span>
+            <span>
+              <span class="d-block fw-bold">盐小工校园通</span>
+              <small class="text-secondary" style="font-size:10px">运营管理中心</small>
+            </span>
+          </span>
+        </h1>
+        <div class="collapse navbar-collapse" id="sidebar-menu">
+          <ul class="navbar-nav pt-lg-3">
+            <li class="nav-item">
+              <a class="nav-link nav-item active" href="#dashboard" id="nav-dashboard" onclick="switchTab('dashboard');return false;">
+                <span class="nav-link-icon"><i class="ti ti-dashboard"></i></span>
+                <span class="nav-link-title">仪表盘</span>
+              </a>
+            </li>
+            <li class="nav-item pt-2"><span class="nav-link disabled text-uppercase" style="font-size:10px;letter-spacing:.08em">学生档案</span></li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#colleges" id="nav-colleges" onclick="switchTab('colleges');return false;">
+                <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
+                <span class="nav-link-title">按学院划分</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#classes" id="nav-classes" onclick="switchTab('classes');return false;">
+                <span class="nav-link-icon"><i class="ti ti-users-group"></i></span>
+                <span class="nav-link-title">班级名册</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#users" id="nav-users" onclick="switchTab('users');return false;">
+                <span class="nav-link-icon"><i class="ti ti-user-search"></i></span>
+                <span class="nav-link-title">考生全库</span>
+              </a>
+            </li>
+            <li class="nav-item pt-2"><span class="nav-link disabled text-uppercase" style="font-size:10px;letter-spacing:.08em">学情数据</span></li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#exams" id="nav-exams" onclick="switchTab('exams');return false;">
+                <span class="nav-link-icon"><i class="ti ti-clipboard-list"></i></span>
+                <span class="nav-link-title">模考流水</span>
+              </a>
+            </li>
+            <li class="nav-item pt-2"><span class="nav-link disabled text-uppercase" style="font-size:10px;letter-spacing:.08em">运营工具</span></li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#announcement" id="nav-announcement" onclick="switchTab('announcement');return false;">
+                <span class="nav-link-icon"><i class="ti ti-speakerphone"></i></span>
+                <span class="nav-link-title">开屏公告</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#reminder" id="nav-reminder" onclick="switchTab('reminder');return false;">
+                <span class="nav-link-icon"><i class="ti ti-bell"></i></span>
+                <span class="nav-link-title">上课提醒</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link nav-item" href="#codes" id="nav-codes" onclick="switchTab('codes');return false;">
+                <span class="nav-link-icon"><i class="ti ti-key"></i></span>
+                <span class="nav-link-title">激活码库</span>
+              </a>
+            </li>
+          </ul>
+          <div class="mt-auto mb-3 px-3">
+            <button class="btn btn-outline-primary w-100 mb-2" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
+              <i class="ti ti-cloud-download me-1"></i>从云托管同步
+            </button>
+            <button class="btn btn-ghost-secondary w-100" onclick="refreshCurrentTab(true)">
+              <i class="ti ti-refresh me-1"></i>刷新本页
             </button>
           </div>
         </div>
-
-        <div class="flex items-center justify-between text-xs text-slate-600">
-          <label class="flex items-center space-x-2 cursor-pointer select-none">
-            <input type="checkbox" id="rememberPasswordCheck" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
-            <span>记住此设备登录状态</span>
-          </label>
-        </div>
-
-        <div id="adminAuthError" class="hidden text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs font-medium text-center"></div>
-
-        <button 
-          type="submit" 
-          id="adminAuthSubmitBtn" 
-          class="w-full py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-lg shadow-indigo-100 active:scale-95 flex items-center justify-center space-x-2"
-        >
-          <span>验证并进入控制台</span>
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- 顶部状态导航 -->
-  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      
-      <!-- 左侧：Logo 与状态 -->
-      <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-100 font-bold text-xl">
-          📖
-        </div>
-        <div>
-          <div class="flex items-center space-x-2">
-            <span class="font-bold text-lg text-slate-900 tracking-tight">StudyMaster</span>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 flex items-center space-x-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>本地安全部署 · 实时同步中</span>
-            </span>
-          </div>
-          <p class="text-xs text-slate-500 hidden sm:block">高校备考系统 · 考生档案与云端运维一体化中枢</p>
-        </div>
       </div>
-
-      <!-- 右侧：环境状态 & 刷新 -->
-      <div class="flex items-center space-x-3">
-        
-        <!-- 手动触发线上全量拉取 -->
-        <button onclick="syncFromCloudBaseAction()" id="btnSyncCloud" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition shadow-sm active:scale-95">
-          <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
-          </svg>
-          一键拉取最新线上数据
-        </button>
-
-        <button onclick="refreshCurrentTab(true)" class="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 transition shadow-sm active:scale-95">
-          <svg class="w-3.5 h-3.5 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-          </svg>
-          刷新
-        </button>
-
-        <!-- 退出登录 / 锁定后台 -->
-        <button onclick="adminLogout()" class="inline-flex items-center px-3 py-1.5 border border-rose-200 text-xs font-medium rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition shadow-sm active:scale-95" title="退出并锁定后台">
-          <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-          </svg>
-          锁定
-        </button>
-      </div>
-
-    </div>
-  </header>
-
-  <!-- 主体工作区 -->
-  <div class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row gap-6">
-
-    <!-- 侧边导航栏 -->
-    <aside class="w-full md:w-60 flex-shrink-0">
-      <nav class="bg-white rounded-2xl border border-slate-200 p-2 shadow-sm space-y-1 sticky top-24">
-        
-        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition text-indigo-600 bg-indigo-50">
-          <span class="text-lg">📊</span>
-          <span>总览大屏</span>
-        </button>
-
-        <!-- 班级专属查询与考勤入口 -->
-        <button onclick="switchTab('classes')" id="nav-classes" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-600 hover:bg-slate-50">
-          <span class="text-lg">🏫</span>
-          <span class="flex-1 text-left">班级信息查询</span>
-          <span class="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 font-bold rounded">HOT</span>
-        </button>
-
-        <button onclick="switchTab('users')" id="nav-users" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-600 hover:bg-slate-50">
-          <span class="text-lg">👥</span>
-          <span>全校考生名册</span>
-        </button>
-
-        <button onclick="switchTab('exams')" id="nav-exams" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-600 hover:bg-slate-50">
-          <span class="text-lg">📝</span>
-          <span>模考成绩流水</span>
-        </button>
-
-        <button onclick="switchTab('announcement')" id="nav-announcement" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-600 hover:bg-slate-50">
-          <span class="text-lg">📢</span>
-          <span>开屏公告管理</span>
-        </button>
-
-        <button onclick="switchTab('reminder')" id="nav-reminder" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-600 hover:bg-slate-50">
-          <span class="text-lg">⏰</span>
-          <span>上课订阅提醒</span>
-        </button>
-
-        <button onclick="switchTab('codes')" id="nav-codes" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-600 hover:bg-slate-50">
-          <span class="text-lg">🔑</span>
-          <span>模考激活码</span>
-        </button>
-
-      </nav>
     </aside>
 
-    <!-- 右侧内容主视区 -->
-    <main class="flex-1 min-w-0">
-
-      <!-- ============================================================ -->
-      <!-- TAB 1: 数据总览大屏 -->
-      <!-- ============================================================ -->
-      <section id="tab-dashboard" class="tab-content active space-y-6">
-        
-        <!-- ☁️ 微信云托管 (CloudBase) 容器状态与自动更新监控面板 -->
-        <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-            <div class="flex items-center space-x-3">
-              <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 text-lg">
-                ☁️
-              </div>
-              <div>
-                <div class="flex items-center space-x-2">
-                  <h3 class="font-bold text-slate-900 text-base">微信云托管 (WeChat CloudBase) 容器服务</h3>
-                  <span id="cloudStatusBadge" class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span id="cloudStatusText">探活正常 (200 OK)</span>
-                  </span>
-                </div>
-                <p class="text-xs text-slate-500 mt-0.5">微信免备案原生安全通道 wx.cloud.callContainer · 7×24h 自动化健康巡检与数据热同步</p>
-              </div>
-            </div>
-            <div class="flex items-center space-x-2">
-              <span class="text-xs text-slate-400 font-mono" id="cloudPingText">探活延迟: 检测中...</span>
-              <a href="https://cloud.weixin.qq.com/" target="_blank" class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
-                <span>云托管控制台 ↗</span>
-              </a>
-            </div>
+    <div class="page-wrapper">
+      <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-xl">
+          <div class="navbar-nav flex-row order-md-last gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportUsersCsv()"><i class="ti ti-download"></i> 导出考生</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportExamsCsv()"><i class="ti ti-download"></i> 导出模考</button>
           </div>
-
-          <!-- 云托管 4 项核心参数卡片 -->
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
-              <div class="text-[11px] text-slate-400 font-medium">线上正式环境 ID</div>
-              <div class="text-xs font-bold font-mono text-slate-800 mt-1 select-all" id="cloudEnvId">prod-d0g39zvr13ada49af</div>
-              <div class="text-[10px] text-slate-400 mt-0.5">服务名: studymaster</div>
-            </div>
-            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
-              <div class="text-[11px] text-slate-400 font-medium">每日自动更新机制</div>
-              <div class="text-xs font-bold text-emerald-600 mt-1 flex items-center space-x-1">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                <span>每30秒增量同步</span>
-              </div>
-              <div class="text-[10px] text-slate-400 mt-0.5" id="cloudLastSyncText">最近同步: 刚刚</div>
-            </div>
-            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
-              <div class="text-[11px] text-slate-400 font-medium">数据持久化安全保障</div>
-              <div class="text-xs font-bold text-indigo-600 mt-1">原子写入 + 每日冷备</div>
-              <div class="text-[10px] text-slate-400 mt-0.5">自动备份至 data/backups</div>
-            </div>
-            <div class="bg-slate-50/80 rounded-xl p-3 border border-slate-100">
-              <div class="text-[11px] text-slate-400 font-medium">线上公网直连入口</div>
-              <div class="text-xs font-bold font-mono text-blue-600 mt-1 truncate">
-                <a href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health" target="_blank" class="hover:underline">studymaster-299598...</a>
-              </div>
-              <div class="text-[10px] text-slate-400 mt-0.5">端口: 80 / 3000</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 微信官方平台数据对照卡片 -->
-        <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-2xl p-6 text-white shadow-xl shadow-indigo-950/10">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-700/50 pb-4 mb-4">
+          <div class="d-flex align-items-center">
             <div>
-              <div class="flex items-center space-x-2">
-                <span class="text-xl">📲</span>
-                <h3 class="font-bold text-lg">微信小程序平台 · 官方核心指标</h3>
-                <span class="bg-indigo-500/30 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full border border-indigo-400/30">
-                  真实全域统计
-                </span>
-              </div>
-              <p class="text-xs text-indigo-200 mt-1">
-                微信公众平台基于用户微信 ID 官方统计的实际访问规模（数据已实时全自动同步接入）
-              </p>
-            </div>
-            <div id="wxOfficialPeriodText" class="text-xs text-indigo-300 bg-indigo-950/40 px-3 py-1.5 rounded-lg border border-indigo-700/50">
-              数据周期：2026-10-23 官方核算
-            </div>
-          </div>
-
-          <!-- 4 组大指标 -->
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-              <div class="text-xs text-indigo-200 font-medium">官方累计用户数</div>
-              <div id="wxOfficialTotalUsers" class="text-2xl sm:text-3xl font-extrabold mt-1 text-white">1,861</div>
-              <div id="wxOfficialTotalUsersSub" class="text-xs text-emerald-300 mt-1 flex items-center font-medium">
-                <span>↑ 0.54% 日环比 (+10人)</span>
-              </div>
-            </div>
-
-            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-              <div class="text-xs text-indigo-200 font-medium">昨日打开次数</div>
-              <div id="wxOfficialSessionCnt" class="text-2xl sm:text-3xl font-extrabold mt-1 text-white">963</div>
-              <div id="wxOfficialSessionCntSub" class="text-xs text-indigo-200 mt-1 flex items-center font-medium">
-                <span>昨日访问 PV: 3,110 次</span>
-              </div>
-            </div>
-
-            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-              <div class="text-xs text-indigo-200 font-medium">昨日访问人数 (DAU)</div>
-              <div id="wxOfficialVisitUv" class="text-2xl sm:text-3xl font-extrabold mt-1 text-white">312</div>
-              <div id="wxOfficialVisitUvSub" class="text-xs text-indigo-200 mt-1 flex items-center font-medium">
-                <span>人均停留 304 秒 · 深度 1.9 页</span>
-              </div>
-            </div>
-
-            <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
-              <div class="text-xs text-indigo-200 font-medium">昨日新增用户</div>
-              <div id="wxOfficialVisitUvNew" class="text-2xl sm:text-3xl font-extrabold mt-1 text-white">10</div>
-              <div id="wxOfficialVisitUvNewSub" class="text-xs text-emerald-300 mt-1 flex items-center font-medium">
-                <span>昨日分享转发 16 次 (8人)</span>
-              </div>
+              <div class="fw-bold">盐小工校园通 · 运营管理中心</div>
+              <div class="text-secondary small">学生档案 · 学院/班级分类 · 学情与运营 · 数据以云托管/MySQL 为准</div>
             </div>
           </div>
         </div>
+      </header>
 
-        <!-- 本地真实建档业务数据卡片 -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">系统建档考生</div>
-            <div id="statTotalUsers" class="text-3xl font-bold text-slate-900 mt-2">--</div>
-            <div class="text-xs text-slate-500 mt-1">
-              已完善档案: <span id="statProfileDone" class="font-semibold text-emerald-600">--</span> 人
-            </div>
-          </div>
+      <div class="page-body">
+        <div class="container-xl">
 
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">累计模拟考试</div>
-            <div id="statTotalExams" class="text-3xl font-bold text-indigo-600 mt-2">--</div>
-            <div class="text-xs text-slate-500 mt-1">
-              及格率: <span id="statPassRate" class="font-semibold text-slate-700">--%</span>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">练习刷题总次数</div>
-            <div id="statTotalPractices" class="text-3xl font-bold text-violet-600 mt-2">--</div>
-            <div class="text-xs text-slate-500 mt-1">
-              累计学习事件: <span id="statTotalEvents" class="font-semibold text-slate-700">--</span> 次
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">今日实时活跃</div>
-            <div id="statActiveToday" class="text-3xl font-bold text-emerald-600 mt-2">--</div>
-            <div class="text-xs text-slate-500 mt-1">
-              今日事件流水: <span id="statTodayEvents" class="font-semibold text-emerald-600">--</span> 条
-            </div>
-          </div>
-        </div>
-
-        <!-- 班级分布与最近活动 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <!-- 热门班级排行（支持点击直达该班） -->
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-              <h4 class="font-bold text-slate-900 text-sm">各班考生分布排行 (点击直达该班)</h4>
-              <button onclick="switchTab('classes')" class="text-xs text-indigo-600 hover:underline">班级详细查询 ›</button>
-            </div>
-            <div id="classRankList" class="space-y-3">
-              <p class="text-xs text-slate-400 py-4 text-center">正在加载班级数据...</p>
-            </div>
-          </div>
-
-          <!-- 最近答题活动动态 -->
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-              <h4 class="font-bold text-slate-900 text-sm">最新模拟考试动态流水</h4>
-              <button onclick="switchTab('exams')" class="text-xs text-indigo-600 hover:underline">查看全量成绩 ›</button>
-            </div>
-            <div id="recentActivityList" class="space-y-3">
-              <p class="text-xs text-slate-400 py-4 text-center">正在读取考生成绩...</p>
-            </div>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- TAB 2: 班级专属查询与考勤中心 (核心新功能) -->
-      <!-- ============================================================ -->
-      <section id="tab-classes" class="tab-content space-y-5">
-        
-        <!-- 班级选择器卡片 -->
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h3 class="font-bold text-slate-900 text-base flex items-center space-x-2">
-                <span>🏫</span>
-                <span>班级信息与考勤核对中心</span>
-              </h3>
-              <p class="text-xs text-slate-500 mt-0.5">选择或搜索指定班级，一键查询该班所有考生信息与模考成绩</p>
-            </div>
-            
-            <div id="classExportBtnWrapper" class="hidden">
-              <button onclick="exportCurrentClassCsv()" class="inline-flex items-center px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm active:scale-95">
-                <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                </svg>
-                导出该班级花名册 (Excel/CSV)
-              </button>
-            </div>
-          </div>
-
-          <!-- 筛选控制行 -->
-          <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <!-- 班级选择下拉 -->
-            <div class="sm:col-span-7">
-              <label class="block text-xs font-semibold text-slate-700 mb-1">选择班级 (按登记人数排序)</label>
-              <select id="classSelectDropdown" onchange="onSelectClassChange()" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none transition">
-                <option value="">-- 请选择需要查询的班级 --</option>
-              </select>
-            </div>
-
-            <!-- 班级内二次过滤 -->
-            <div class="sm:col-span-5">
-              <label class="block text-xs font-semibold text-slate-700 mb-1">在当前班内搜索学生</label>
-              <input 
-                type="text" 
-                id="classStudentSearchInput" 
-                placeholder="搜索该班学生的姓名/电话/学号..." 
-                oninput="filterCurrentClassStudents()"
-                class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none transition"
-              >
-            </div>
-          </div>
-        </div>
-
-        <!-- 选中班级后的【全景信息卡片】 -->
-        <div id="classOverviewCard" class="hidden bg-gradient-to-r from-slate-900 to-indigo-950 rounded-2xl p-5 text-white shadow-md">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div class="flex items-center space-x-2">
-                <span class="text-2xl">🎓</span>
-                <h2 id="activeClassName" class="text-xl font-extrabold tracking-tight">--</h2>
-                <span id="activeClassTag" class="text-[10px] px-2 py-0.5 bg-indigo-500/30 border border-indigo-400/30 rounded-full text-indigo-200">班级档案</span>
-              </div>
-              <p class="text-xs text-indigo-200 mt-1">
-                已登记考生共 <span id="activeClassTotal" class="font-bold text-white">0</span> 人，其中 <span id="activeClassCompleted" class="font-bold text-emerald-300">0</span> 人已完善姓名与手机号
-              </p>
-            </div>
-
-            <!-- 班级关键指标 -->
-            <div class="flex items-center space-x-4 text-center">
-              <div class="bg-white/10 px-3 py-2 rounded-xl border border-white/10">
-                <div class="text-[10px] text-indigo-200">档案完善率</div>
-                <div id="activeClassRate" class="text-base font-bold text-emerald-300 mt-0.5">--%</div>
-              </div>
-              <div class="bg-white/10 px-3 py-2 rounded-xl border border-white/10">
-                <div class="text-[10px] text-indigo-200">模考平均分</div>
-                <div id="activeClassAvgScore" class="text-base font-bold text-white mt-0.5">-- 分</div>
-              </div>
-              <div class="bg-white/10 px-3 py-2 rounded-xl border border-white/10">
-                <div class="text-[10px] text-indigo-200">最高得分</div>
-                <div id="activeClassMaxScore" class="text-base font-bold text-amber-300 mt-0.5">-- 分</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 该班级成员表格 -->
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <span class="font-bold text-xs text-slate-700">该班学生名册</span>
-            <span id="classTableCountText" class="text-xs text-slate-400">请先在上方选择班级</span>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase">
-                <tr>
-                  <th class="py-3 px-4 w-14">序号</th>
-                  <th class="py-3 px-4">真实姓名</th>
-                  <th class="py-3 px-4">电话号码</th>
-                  <th class="py-3 px-4">学号</th>
-                  <th class="py-3 px-4">模考次数</th>
-                  <th class="py-3 px-4">最高得分</th>
-                  <th class="py-3 px-4">平均正确率</th>
-                  <th class="py-3 px-4">档案状态</th>
-                  <th class="py-3 px-4 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody id="classStudentsTableBody" class="divide-y divide-slate-100 text-slate-700">
-                <tr>
-                  <td colspan="9" class="py-12 text-center text-slate-400">
-                    <div class="text-2xl mb-1">🔍</div>
-                    <div>请在上方下拉菜单中选择一个班级以查看其全体同学信息</div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- TAB 3: 全校考生名册管理 -->
-      <!-- ============================================================ -->
-      <section id="tab-users" class="tab-content space-y-4">
-        
-        <!-- 头部过滤与操作栏 -->
-        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div class="flex-1 flex flex-col sm:flex-row gap-3">
-            <!-- 搜索框 -->
-            <div class="relative flex-1 max-w-sm">
-              <input 
-                type="text" 
-                id="userSearchInput" 
-                placeholder="搜索姓名 / 班级 / 电话 / 学号..." 
-                oninput="handleUserSearch()"
-                class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none transition"
-              >
-              <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-              </svg>
-            </div>
-
-            <!-- 筛选下拉 -->
-            <select id="userFilterSelect" onchange="handleUserSearch()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-600 focus:outline-none">
-              <option value="all">全部档案状态</option>
-              <option value="completed">已完善档案</option>
-              <option value="pending">待完善档案</option>
-            </select>
-          </div>
-
-          <!-- 导出按钮 -->
-          <div class="flex items-center space-x-2">
-            <a href="#" onclick="exportUsersCsv(event)" class="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm active:scale-95">
-              <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-              </svg>
-              导出全校名册 (Excel/CSV)
-            </a>
-          </div>
-        </div>
-
-        <!-- 考生列表表格 -->
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
-                <tr>
-                  <th class="py-3.5 px-4">考生</th>
-                  <th class="py-3.5 px-4">所在班级</th>
-                  <th class="py-3.5 px-4">电话号码</th>
-                  <th class="py-3.5 px-4">学号</th>
-                  <th class="py-3.5 px-4">模考次数</th>
-                  <th class="py-3.5 px-4">最高分</th>
-                  <th class="py-3.5 px-4">档案状态</th>
-                  <th class="py-3.5 px-4">最近活跃</th>
-                  <th class="py-3.5 px-4 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody id="usersTableBody" class="divide-y divide-slate-100 text-slate-700">
-                <tr>
-                  <td colspan="9" class="py-8 text-center text-slate-400">加载考生数据中...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- TAB 4: 模考成绩流水 -->
-      <!-- ============================================================ -->
-      <section id="tab-exams" class="tab-content space-y-4">
-        
-        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <h3 class="font-bold text-slate-900 text-sm">全量上机模拟考试答卷流水</h3>
-            <p class="text-xs text-slate-500 mt-0.5">每位考生的交卷得分、答题耗时与及格状态实时记录</p>
-          </div>
-          <a href="#" onclick="exportExamsCsv(event)" class="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm active:scale-95">
-            <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-            </svg>
-            导出成绩单 (CSV)
-          </a>
-        </div>
-
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
-                <tr>
-                  <th class="py-3.5 px-4">交卷时间</th>
-                  <th class="py-3.5 px-4">考生姓名</th>
-                  <th class="py-3.5 px-4">班级</th>
-                  <th class="py-3.5 px-4">电话号码</th>
-                  <th class="py-3.5 px-4">试卷/科目</th>
-                  <th class="py-3.5 px-4">得分 / 满分</th>
-                  <th class="py-3.5 px-4">正确率</th>
-                  <th class="py-3.5 px-4">状态</th>
-                </tr>
-              </thead>
-              <tbody id="examsTableBody" class="divide-y divide-slate-100 text-slate-700">
-                <tr>
-                  <td colspan="8" class="py-8 text-center text-slate-400">暂无模考答卷数据</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- TAB 5: 开屏公告管理 (所见即所得编辑器) -->
-      <!-- ============================================================ -->
-      <section id="tab-announcement" class="tab-content space-y-6">
-        
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          <!-- 左侧配置表单 -->
-          <div class="lg:col-span-7 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div>
-                <h3 class="font-bold text-slate-900 text-base">开屏公告弹窗设置</h3>
-                <p class="text-xs text-slate-500 mt-0.5">修改后小程序即时生效，无需重新审核发版</p>
-              </div>
-              
-              <!-- 总开关 -->
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="annEnabled" class="sr-only peer" onchange="updateAnnouncementPreview()">
-                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                <span class="ml-2 text-xs font-semibold text-slate-700">启用弹窗</span>
-              </label>
-            </div>
-
-            <!-- 公告标题 -->
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">公告标题</label>
-              <input type="text" id="annTitle" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="updateAnnouncementPreview()" placeholder="如：最新公告">
-            </div>
-
-            <!-- 公告正文 -->
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">正文内容 (支持换行)</label>
-              <textarea id="annText" rows="3" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="updateAnnouncementPreview()" placeholder="输入需要向全校同学通知的内容..."></textarea>
-            </div>
-
-            <!-- 联系方式微信号 -->
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">展示联系微信号 (支持多个以斜杠分割，点击一键复制)</label>
-              <input type="text" id="annContact" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="updateAnnouncementPreview()" placeholder="如：Corwin07 / Woxiangxingfu777">
-            </div>
-
-            <!-- 弹出频次 -->
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">弹出频次模式</label>
-              <select id="annShowMode" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                <option value="always">每次打开小程序均提示</option>
-                <option value="oncePerVersion">每个版本仅提示一次（点击关闭后不再弹出）</option>
-              </select>
-            </div>
-
-            <!-- 配图模式 -->
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">海报配图链接 (选填，留空展示纯文字)</label>
-              <input type="text" id="annImage" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="updateAnnouncementPreview()" placeholder="如：/images/announcement/notice-poster.jpg 或网络图片URL">
-            </div>
-
-            <!-- 保存按钮 -->
-            <div class="pt-2">
-              <button onclick="saveAnnouncementConfig()" id="btnSaveAnn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-md shadow-indigo-100 flex items-center justify-center">
-                <span>保存并实时同步给全体小程序用户</span>
-              </button>
-            </div>
-
-          </div>
-
-          <!-- 右侧手机端实时渲染预览 -->
-          <div class="lg:col-span-5 flex flex-col items-center justify-center p-4 bg-slate-100 rounded-2xl border border-slate-200">
-            <div class="text-xs font-semibold text-slate-500 mb-3 flex items-center space-x-1">
-              <span>📱</span>
-              <span>小程序端弹窗实时渲染预览</span>
-            </div>
-
-            <div class="phone-mockup bg-slate-900 flex items-center justify-center p-3">
-              <div class="phone-notch"></div>
-              
-              <!-- 弹窗卡片本体 -->
-              <div id="previewCard" class="w-full bg-white rounded-2xl p-4 shadow-2xl relative text-center flex flex-col max-h-[460px]">
-                <div class="absolute right-3 top-3 text-slate-400 text-xs">✕</div>
-                <div id="prevTitle" class="text-sm font-bold text-slate-900 mt-2">最新公告</div>
-                
-                <div class="mt-2 rounded-xl overflow-hidden bg-slate-100 max-h-36 flex items-center justify-center border border-slate-100">
-                  <img id="prevImg" src="/images/announcement/notice-poster.jpg" class="w-full object-cover" onerror="this.style.display='none'" onload="this.style.display='block'">
-                </div>
-
-                <div id="prevText" class="text-xs text-slate-600 mt-3 text-left leading-relaxed line-clamp-4">
-                  扫码加入校园论坛，学生互助！交友！全校同学都在！
-                </div>
-
-                <div class="mt-3 p-2 bg-indigo-50/80 rounded-xl border border-indigo-100 flex items-center justify-between text-left">
-                  <div class="min-w-0 pr-2">
-                    <div class="text-[10px] text-slate-400 font-medium">联系微信</div>
-                    <div id="prevContact" class="text-xs text-indigo-700 font-bold truncate">Corwin07</div>
+          <!-- DASHBOARD -->
+          <section id="tab-dashboard" class="tab-content active space-y-6">
+            <div class="row row-cards mb-3">
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-stamp"><div class="card-stamp-icon bg-green"><i class="ti ti-cloud"></i></div></div>
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                      <div>
+                        <h3 class="card-title mb-1">微信云托管 (WeChat CloudBase) 容器服务</h3>
+                        <div class="text-secondary small">wx.cloud.callContainer · 环境 <code id="cloudEnvId">prod-d0g39zvr13ada49af</code> · 服务 studymaster</div>
+                      </div>
+                      <span id="cloudStatusBadge" class="badge bg-green-lt"><span id="cloudStatusText">探活检测中...</span></span>
+                    </div>
+                    <div class="row mt-3 g-2">
+                      <div class="col-md-4"><div class="text-secondary small">探活</div><div class="fw-bold" id="cloudPingText">检测中...</div></div>
+                      <div class="col-md-4"><div class="text-secondary small">最近同步</div><div class="fw-bold" id="cloudLastSyncText">刚刚</div></div>
+                      <div class="col-md-4"><div class="text-secondary small">健康入口</div><a class="small" target="_blank" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster health ↗</a></div>
+                    </div>
                   </div>
-                  <div class="px-2 py-1 bg-indigo-600 text-white text-[10px] font-semibold rounded-lg flex-shrink-0">复制</div>
-                </div>
-
-                <div class="mt-4 pt-2">
-                  <div class="w-full py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-xs font-bold">我知道了</div>
                 </div>
               </div>
-
-            </div>
-          </div>
-
-        </div>
-
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- TAB 6: 上课提醒配置 -->
-      <!-- ============================================================ -->
-      <section id="tab-reminder" class="tab-content space-y-6">
-        
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5">
-          <div class="border-b border-slate-100 pb-4">
-            <h3 class="font-bold text-slate-900 text-base">微信订阅消息 · 上课提醒服务</h3>
-            <p class="text-xs text-slate-500 mt-0.5">根据全校课表，在每节课前通过微信服务通知向订阅学生发送教室与课程提醒</p>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">上课提醒模板 ID (微信公众平台获取)</label>
-              <input type="text" id="remindTemplateId" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value="m1-5CUHw4HjSfUE0PuP6wJwuBw5ywTn8xkJ7oibxcy0">
             </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">低电费预警 (&lt;10度) 模板 ID (预留)</label>
-              <input type="text" id="electricityTemplateId" placeholder="留空则默认复用上课提醒模板" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value="">
+            <div class="row row-cards mb-3">
+              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">建档考生</div><div class="h1 mb-0" id="statTotalUsers">--</div><div class="text-secondary small">完善档案 <span id="statProfileDone">--</span></div></div></div></div>
+              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">累计模考</div><div class="h1 mb-0" id="statTotalExams">--</div><div class="text-secondary small">及格率 <span id="statPassRate">--</span>%</div></div></div></div>
+              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">练习次数</div><div class="h1 mb-0" id="statTotalPractices">--</div><div class="text-secondary small">学习事件 <span id="statTotalEvents">--</span></div></div></div></div>
+              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">今日活跃</div><div class="h1 mb-0" id="statActiveToday">--</div><div class="text-secondary small">今日事件 <span id="statTodayEvents">--</span></div></div></div></div>
             </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">finance.ycit.edu.cn 电控会话 (JSESSIONID)</label>
-              <input type="text" id="financeJsessionId" placeholder="选填，32位电控系统SessionID" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value="">
+            <div class="row row-cards mb-3">
+              <div class="col-12">
+                <div class="card bg-primary-lt">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <h3 class="card-title mb-0 text-primary">盐小工校园通 · 核心运营指标（微信官方）</h3>
+                      <span class="badge bg-primary-lt" id="wxOfficialPeriodText">数据周期：--</span>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-6 col-md-3"><div class="text-secondary small">官方累计用户</div><div class="h2" id="wxOfficialTotalUsers">--</div><div class="small" id="wxOfficialTotalUsersSub"></div></div>
+                      <div class="col-6 col-md-3"><div class="text-secondary small">昨日打开次数</div><div class="h2" id="wxOfficialSessionCnt">--</div><div class="small" id="wxOfficialSessionCntSub"></div></div>
+                      <div class="col-6 col-md-3"><div class="text-secondary small">昨日访问人数 DAU</div><div class="h2" id="wxOfficialVisitUv">--</div><div class="small" id="wxOfficialVisitUvSub"></div></div>
+                      <div class="col-6 col-md-3"><div class="text-secondary small">昨日新增用户</div><div class="h2" id="wxOfficialVisitUvNew">--</div><div class="small" id="wxOfficialVisitUvNewSub"></div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">提前推送时间 (分钟)</label>
-              <input type="number" id="remindAheadMinutes" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value="20">
+            <div class="row row-cards mb-3">
+              <div class="col-lg-4">
+                <div class="card h-100">
+                  <div class="card-header"><h3 class="card-title">学院分布速览</h3><div class="card-actions"><a href="#colleges" onclick="switchTab('colleges');return false;" class="btn btn-sm">查看全部</a></div></div>
+                  <div class="card-body" id="dashboardCollegeRank"><div class="text-secondary">加载中...</div></div>
+                </div>
+              </div>
+              <div class="col-lg-4">
+                <div class="card h-100">
+                  <div class="card-header"><h3 class="card-title">各班考生分布</h3><div class="card-actions"><a href="#classes" onclick="switchTab('classes');return false;" class="btn btn-sm">班级详细</a></div></div>
+                  <div class="list-group list-group-flush overflow-auto" style="max-height:280px" id="classRankList"><div class="list-group-item text-secondary">正在加载班级数据...</div></div>
+                </div>
+              </div>
+              <div class="col-lg-4">
+                <div class="card h-100">
+                  <div class="card-header"><h3 class="card-title">最近活跃</h3></div>
+                  <div class="list-group list-group-flush overflow-auto" style="max-height:280px" id="recentActivityList"><div class="list-group-item text-secondary">读取中...</div></div>
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div class="pt-2">
-            <button onclick="saveReminderConfig()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm">
-              保存提醒配置
-            </button>
-          </div>
+          <!-- COLLEGES -->
+          <section id="tab-colleges" class="tab-content">
+            <div class="page-header d-print-none mb-3">
+              <div class="row align-items-center">
+                <div class="col"><h2 class="page-title">学生档案 · 按学院划分</h2>
+                  <div class="text-secondary">优先用学生已填学院；未填时按班级从新生库自动归属。</div></div>
+                <div class="col-auto">
+                  <span class="text-secondary me-2">共 <strong id="collegeCountBadge">0</strong> 个学院</span>
+                  <button id="collegeExportBtn" class="btn btn-primary hidden" onclick="exportCurrentCollegeCsv()"><i class="ti ti-download"></i> 导出本院 CSV</button>
+                </div>
+              </div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-6"><input type="text" id="collegeSearchInput" class="form-control" placeholder="搜索学院..." oninput="renderCollegeCards()" /></div>
+              <div class="col-md-6"><select id="collegeSelectDropdown" class="form-select" onchange="onSelectCollegeChange()"><option value="">-- 浏览全部学院卡片，或在此选择 --</option></select></div>
+            </div>
+            <div id="collegeCardsGrid" class="row row-cards mb-3"><div class="col-12 text-center text-secondary py-5">正在加载学院统计...</div></div>
+            <div id="collegeOverviewCard" class="card hidden mb-3 bg-dark text-white">
+              <div class="card-body">
+                <div class="d-flex justify-content-between flex-wrap gap-2">
+                  <div>
+                    <div class="small text-secondary">学院档案</div>
+                    <h2 id="activeCollegeName" class="text-white">--</h2>
+                    <div class="small">已登记 <span id="activeCollegeTotal">0</span> 人 · 完善 <span id="activeCollegeCompleted">0</span> · 班级 <span id="activeCollegeClasses">0</span></div>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <div class="bg-white bg-opacity-10 p-2 rounded"><div class="small">完善率</div><div class="fw-bold" id="activeCollegeRate">--%</div></div>
+                    <div class="bg-white bg-opacity-10 p-2 rounded"><div class="small">模考均分</div><div class="fw-bold" id="activeCollegeAvgScore">--</div></div>
+                    <div class="bg-white bg-opacity-10 p-2 rounded"><div class="small">最高分</div><div class="fw-bold" id="activeCollegeMaxScore">--</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="collegeStudentsPanel" class="card hidden">
+              <div class="card-header">
+                <input type="text" id="collegeStudentSearchInput" class="form-control form-control-sm w-auto" placeholder="本院内搜姓名/电话/学号/班级..." oninput="filterCurrentCollegeStudents()" />
+                <span class="ms-auto text-secondary small" id="collegeTableCountText">--</span>
+              </div>
+              <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+                <thead><tr><th>姓名</th><th>电话</th><th>学号</th><th>班级</th><th>模考</th><th>最高分</th><th>档案</th></tr></thead>
+                <tbody id="collegeStudentsTableBody"></tbody>
+              </table></div>
+            </div>
+          </section>
+
+          <!-- CLASSES -->
+          <section id="tab-classes" class="tab-content">
+            <div class="page-header mb-3"><h2 class="page-title">班级信息与考勤核对中心</h2>
+              <div class="text-secondary">选择或搜索指定班级，一键查询该班所有考生信息与模考成绩</div></div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-4"><label class="form-label">先按学院筛选</label>
+                <select id="classCollegeFilterSelect" class="form-select" onchange="onClassCollegeFilterChange()"><option value="all">全部学院</option></select></div>
+              <div class="col-md-5"><label class="form-label">选择班级</label>
+                <select id="classSelectDropdown" class="form-select" onchange="onSelectClassChange()"><option value="">-- 请选择班级 --</option></select></div>
+              <div class="col-md-3 d-flex align-items-end" id="classExportBtnWrapper">
+                <button class="btn btn-outline-primary w-100" onclick="exportCurrentClassCsv()"><i class="ti ti-download"></i> 导出本班</button>
+              </div>
+            </div>
+            <div id="classOverviewCard" class="card mb-3">
+              <div class="card-body">
+                <h2 id="activeClassName">--</h2>
+                <div class="text-secondary mb-2">已登记考生共 <span id="activeClassTotal">0</span> 人，其中 <span id="activeClassCompleted">0</span> 人已完善姓名与手机号 · 档案完善率 <span id="activeClassRate">--%</span></div>
+                <div class="row g-2">
+                  <div class="col-auto"><span class="badge bg-blue-lt">模考均分 <span id="activeClassAvgScore">--</span></span></div>
+                  <div class="col-auto"><span class="badge bg-green-lt">最高得分 <span id="activeClassMaxScore">--</span></span></div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <input id="classStudentSearchInput" class="form-control form-control-sm w-auto" placeholder="班内搜索..." oninput="filterCurrentClassStudents()" />
+                <span class="ms-auto text-secondary small" id="classTableCountText">请先在上方选择班级</span>
+              </div>
+              <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+                <thead><tr><th>序号</th><th>真实姓名</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高得分</th><th>平均正确率</th><th>档案状态</th><th>操作</th></tr></thead>
+                <tbody id="classStudentsTableBody"><tr><td colspan="9" class="text-center text-secondary py-4">请在上方下拉菜单中选择一个班级</td></tr></tbody>
+              </table></div>
+            </div>
+          </section>
+
+          <!-- USERS -->
+          <section id="tab-users" class="tab-content">
+            <div class="page-header mb-3"><h2 class="page-title">考生全库</h2></div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-5"><input id="userSearchInput" class="form-control" placeholder="搜索姓名 / 学院 / 班级 / 电话 / 学号..." oninput="handleUserSearch()" /></div>
+              <div class="col-md-3"><select id="userFilterSelect" class="form-select" onchange="handleUserSearch()"><option value="all">全部档案状态</option><option value="done">已完善</option><option value="todo">未完善</option></select></div>
+              <div class="col-md-4"><select id="userCollegeFilterSelect" class="form-select" onchange="handleUserSearch()"><option value="all">全部学院</option></select></div>
+            </div>
+            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+              <thead><tr><th>考生</th><th>学院</th><th>所在班级</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高分</th><th>档案状态</th><th>最近活跃</th><th>操作</th></tr></thead>
+              <tbody id="usersTableBody"><tr><td colspan="10" class="text-center text-secondary py-4">加载考生数据中...</td></tr></tbody>
+            </table></div></div>
+          </section>
+
+          <!-- EXAMS -->
+          <section id="tab-exams" class="tab-content">
+            <div class="page-header mb-3"><h2 class="page-title">全量上机模拟考试答卷流水</h2>
+              <div class="text-secondary">每位考生的交卷得分、答题耗时与及格状态实时记录</div></div>
+            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+              <thead><tr><th>交卷时间</th><th>考生姓名</th><th>班级</th><th>电话号码</th><th>试卷/科目</th><th>得分 / 满分</th><th>正确率</th><th>状态</th></tr></thead>
+              <tbody id="examsTableBody"><tr><td colspan="8" class="text-center text-secondary py-4">暂无模考答卷数据</td></tr></tbody>
+            </table></div></div>
+          </section>
+
+          <!-- ANNOUNCEMENT -->
+          <section id="tab-announcement" class="tab-content">
+            <div class="page-header mb-3"><h2 class="page-title">开屏公告弹窗设置（盐小工校园通）</h2>
+              <div class="text-secondary">修改后小程序即时生效，无需重新审核发版</div></div>
+            <div class="row g-3">
+              <div class="col-lg-7">
+                <div class="card">
+                  <div class="card-body">
+                    <div class="mb-3 form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="annEnabled" />
+                      <label class="form-check-label" for="annEnabled">启用开屏公告</label>
+                    </div>
+                    <div class="mb-3"><label class="form-label">公告标题</label><input id="annTitle" class="form-control" oninput="updateAnnouncementPreview()" /></div>
+                    <div class="mb-3"><label class="form-label">公告正文</label><textarea id="annText" class="form-control" rows="5" oninput="updateAnnouncementPreview()"></textarea></div>
+                    <div class="mb-3"><label class="form-label">配图 URL（可选）</label><input id="annImage" class="form-control" oninput="updateAnnouncementPreview()" /></div>
+                    <div class="mb-3"><label class="form-label">联系方式 / 底部文案</label><input id="annContact" class="form-control" oninput="updateAnnouncementPreview()" /></div>
+                    <div class="mb-3"><label class="form-label">展示模式</label>
+                      <select id="annShowMode" class="form-select"><option value="once_per_day">每天一次</option><option value="always">每次打开</option><option value="once">仅一次</option></select>
+                    </div>
+                    <button id="btnSaveAnn" class="btn btn-primary" onclick="saveAnnouncementConfig()"><i class="ti ti-device-floppy"></i> 保存并实时同步给全体小程序用户</button>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-5">
+                <div class="card"><div class="card-header"><h3 class="card-title">手机预览</h3></div>
+                  <div class="card-body d-flex justify-content-center">
+                    <div class="preview-phone" id="previewCard">
+                      <div class="p-3 border-bottom bg-white"><div class="fw-bold" id="prevTitle">最新公告</div></div>
+                      <img id="prevImg" src="" alt="" class="w-100 d-none" style="max-height:160px;object-fit:cover" />
+                      <div class="p-3 small" id="prevText" style="white-space:pre-wrap"></div>
+                      <div class="p-3 text-secondary small border-top" id="prevContact"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- REMINDER -->
+          <section id="tab-reminder" class="tab-content">
+            <div class="page-header mb-3"><h2 class="page-title">上课提醒与订阅配置</h2></div>
+            <div class="card mb-3"><div class="card-body">
+              <div class="mb-3"><label class="form-label">上课提醒模板 ID</label><input id="remindTemplateId" class="form-control" /></div>
+              <div class="mb-3"><label class="form-label">提前提醒分钟数</label><input id="remindAheadMinutes" type="number" class="form-control" value="30" /></div>
+              <div class="mb-3"><label class="form-label">低电费预警 (&lt;10度) 模板 ID (预留)</label><input id="electricityTemplateId" class="form-control" /></div>
+              <div class="mb-3"><label class="form-label">财务系统 JSESSIONID（电费代查，敏感）</label><input id="financeJsessionId" class="form-control" type="password" autocomplete="off" /></div>
+              <button class="btn btn-primary" onclick="saveReminderConfig()"><i class="ti ti-device-floppy"></i> 保存提醒配置</button>
+            </div></div>
+            <div class="card"><div class="card-header"><h3 class="card-title">下发日志</h3></div>
+              <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+                <thead><tr><th>下发时间</th><th>班级</th><th>课程名称</th><th>上课时间</th><th>状态</th></tr></thead>
+                <tbody id="reminderLogsBody"><tr><td colspan="5" class="text-center text-secondary py-4">暂无下发日志</td></tr></tbody>
+              </table></div>
+            </div>
+          </section>
+
+          <!-- CODES (restored visible) -->
+          <section id="tab-codes" class="tab-content">
+            <div class="page-header mb-3">
+              <div class="row align-items-center">
+                <div class="col"><h2 class="page-title">模拟考试全通激活码库</h2>
+                  <div class="text-secondary">发放给学生可直接解锁无限次模拟考试考场</div></div>
+                <div class="col-auto">
+                  <button class="btn btn-primary" onclick="batchGenerateCodesPrompt()"><i class="ti ti-plus"></i> 批量生成激活码</button>
+                  <button class="btn btn-outline-secondary" onclick="exportUnusedCodes()"><i class="ti ti-download"></i> 导出未用码</button>
+                </div>
+              </div>
+            </div>
+            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+              <thead><tr><th>激活码</th><th>状态</th><th>使用者</th><th>班级</th><th>电话</th><th>使用时间</th><th>操作</th></tr></thead>
+              <tbody id="codesTableBody"><tr><td colspan="7" class="text-center text-secondary py-4">正在读取激活码数据...</td></tr></tbody>
+            </table></div></div>
+          </section>
+
         </div>
+      </div>
 
-        <!-- 订阅日志 -->
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h4 class="font-bold text-slate-900 text-sm">最新消息下发日志</h4>
-            <span class="text-xs text-slate-400">仅保留最近记录</span>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                <tr>
-                  <th class="py-3 px-4">下发时间</th>
-                  <th class="py-3 px-4">班级</th>
-                  <th class="py-3 px-4">课程名称</th>
-                  <th class="py-3 px-4">上课时间</th>
-                  <th class="py-3 px-4">状态</th>
-                </tr>
-              </thead>
-              <tbody id="reminderLogsTableBody" class="divide-y divide-slate-100 text-slate-700">
-                <tr>
-                  <td colspan="5" class="py-6 text-center text-slate-400">暂无下发日志</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- TAB 7: 模考激活码库 -->
-      <!-- ============================================================ -->
-      <section id="tab-codes" class="tab-content space-y-4">
-        
-        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 class="font-bold text-slate-900 text-sm">模拟考试全通激活码库</h3>
-            <p class="text-xs text-slate-500 mt-0.5">发放给学生可直接解锁无限次模拟考试考场</p>
-          </div>
-
-          <div class="flex items-center space-x-2">
-            <button onclick="batchGenerateCodesPrompt()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm">
-              + 批量生成激活码
-            </button>
-            <a href="#" onclick="exportUnusedCodes(event)" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95">
-              一键复制/导出未用码
-            </a>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
-                <tr>
-                  <th class="py-3.5 px-4">激活码</th>
-                  <th class="py-3.5 px-4">使用状态</th>
-                  <th class="py-3.5 px-4">使用者姓名</th>
-                  <th class="py-3.5 px-4">所在班级</th>
-                  <th class="py-3.5 px-4">电话号码</th>
-                  <th class="py-3.5 px-4">使用时间</th>
-                  <th class="py-3.5 px-4 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody id="codesTableBody" class="divide-y divide-slate-100 text-slate-700">
-                <tr>
-                  <td colspan="7" class="py-8 text-center text-slate-400">正在读取激活码数据...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </section>
-
-    </main>
-
+      <footer class="footer footer-transparent d-print-none">
+        <div class="container-xl"><div class="text-secondary small">盐小工校园通 · Tabler Admin · 数据源：/api/admin + 云托管同步 · 勿把 Vercel /tmp 当唯一真相</div></div>
+      </footer>
+    </div>
   </div>
 
-  <!-- Toast 提示条 -->
-  <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-xl transition-all duration-300 transform translate-y-20 opacity-0 pointer-events-none z-50 flex items-center space-x-2">
-    <span id="toastIcon">✓</span>
-    <span id="toastMsg">操作成功</span>
+  <!-- Auth modal -->
+  <div id="adminAuthModal">
+    <div class="card" style="width:min(420px,92vw)">
+      <div class="card-body p-4">
+        <h2 class="mb-1">盐小工校园通 · 运营管理中心</h2>
+        <p class="text-secondary">系统已启用访问权限保护，请输入管理员密码访问后台</p>
+        <div class="mb-3">
+          <label class="form-label">管理员密码</label>
+          <input type="password" id="adminPasswordInput" class="form-control" placeholder="请输入密码" />
+        </div>
+        <div class="mb-3 form-check">
+          <input class="form-check-input" type="checkbox" id="rememberPasswordCheck" />
+          <label class="form-check-label" for="rememberPasswordCheck">在本机记住登录（localStorage）</label>
+        </div>
+        <div id="adminAuthError" class="text-danger small mb-2" style="display:none"></div>
+        <button id="adminAuthSubmitBtn" class="btn btn-primary w-100">进入后台</button>
+      </div>
+    </div>
   </div>
 
-  <!-- 前端交互与数据加载脚本 -->
-  <script>
-    let globalStats = null
-    let currentTab = 'dashboard'
-    let currentSelectedClass = ''
-    let autoPollingTimer = null
-
-    // ── 管理员密码验证与口令缓存 ─────────────────────────────
-    function getAdminToken() {
-      return localStorage.getItem('studymaster_admin_token') || sessionStorage.getItem('studymaster_admin_token') || ''
-    }
-
-    function setAdminToken(token, remember = true) {
-      if (remember) {
-        localStorage.setItem('studymaster_admin_token', token)
-      } else {
-        sessionStorage.setItem('studymaster_admin_token', token)
-      }
-    }
-
-    function clearAdminToken() {
-      localStorage.removeItem('studymaster_admin_token')
-      sessionStorage.removeItem('studymaster_admin_token')
-    }
-
-    function showAuthModal(errMsg = '') {
-      const modal = document.getElementById('adminAuthModal')
-      const errBox = document.getElementById('adminAuthError')
-      if (modal) {
-        modal.classList.remove('hidden')
-        modal.style.display = 'flex'
-      }
-      if (errBox) {
-        if (errMsg) {
-          errBox.innerText = errMsg
-          errBox.classList.remove('hidden')
-        } else {
-          errBox.classList.add('hidden')
-        }
-      }
-      const input = document.getElementById('adminPasswordInput')
-      if (input) {
-        input.value = ''
-        setTimeout(() => input.focus(), 100)
-      }
-    }
-
-    function hideAuthModal() {
-      const modal = document.getElementById('adminAuthModal')
-      if (modal) {
-        modal.classList.add('hidden')
-        modal.style.display = 'none'
-      }
-      const errBox = document.getElementById('adminAuthError')
-      if (errBox) errBox.classList.add('hidden')
-    }
-
-    function togglePasswordVisibility() {
-      const input = document.getElementById('adminPasswordInput')
-      if (input) {
-        input.type = input.type === 'password' ? 'text' : 'password'
-      }
-    }
-
-    async function handleAuthSubmit(e) {
-      if (e) e.preventDefault()
-      const input = document.getElementById('adminPasswordInput')
-      const password = (input ? input.value : '').trim()
-      const remember = document.getElementById('rememberPasswordCheck')?.checked ?? true
-      const btn = document.getElementById('adminAuthSubmitBtn')
-      const errBox = document.getElementById('adminAuthError')
-
-      if (!password) {
-        if (errBox) {
-          errBox.innerText = '请输入管理员密码'
-          errBox.classList.remove('hidden')
-        }
-        return
-      }
-
-      if (btn) {
-        btn.disabled = true
-        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 验证中...`
-      }
-
-      try {
-        const res = await fetch('/api/admin/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
-        })
-        const json = await res.json()
-        if (json.code === 0) {
-          const token = (json.data && json.data.token) || password
-          setAdminToken(token, remember)
-          hideAuthModal()
-          showToast('管理员身份验证成功！欢迎进入控制台', 'success')
-          startApp()
-        } else {
-          if (errBox) {
-            errBox.innerText = json.message || '密码错误，请重新输入'
-            errBox.classList.remove('hidden')
-          }
-        }
-      } catch (err) {
-        if (errBox) {
-          errBox.innerText = '验证连接异常，请重试: ' + err.message
-          errBox.classList.remove('hidden')
-        }
-      } finally {
-        if (btn) {
-          btn.disabled = false
-          btn.innerHTML = '验证并进入控制台'
-        }
-      }
-    }
-
-    function adminLogout() {
-      if (confirm('确定要退出管理员登录并锁定后台吗？')) {
-        clearAdminToken()
-        if (autoPollingTimer) {
-          clearInterval(autoPollingTimer)
-          autoPollingTimer = null
-        }
-        showAuthModal('已安全退出登录，请重新输入密码')
-      }
-    }
-
-    // 封装统一鉴权请求
-    async function adminFetch(url, options = {}) {
-      const token = getAdminToken()
-      options.headers = options.headers || {}
-      if (token) {
-        if (options.headers instanceof Headers) {
-          options.headers.set('x-admin-token', token)
-        } else {
-          options.headers['x-admin-token'] = token
-        }
-      }
-      const res = await fetch(url, options)
-      if (res.status === 401) {
-        clearAdminToken()
-        showAuthModal('登录口令已过期或未授权，请输入管理员密码')
-        throw new Error('未授权')
-      }
-      return res
-    }
-
-    function exportUsersCsv(e) {
-      if (e) e.preventDefault()
-      window.open(`/api/admin/export/users.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
-    }
-    function exportExamsCsv(e) {
-      if (e) e.preventDefault()
-      window.open(`/api/admin/export/exams.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
-    }
-    function exportUnusedCodes(e) {
-      if (e) e.preventDefault()
-      window.open(`/api/admin/export/unused-codes?token=${encodeURIComponent(getAdminToken())}`, '_blank')
-    }
-
-    // 页面加载入口
-    document.addEventListener('DOMContentLoaded', async () => {
-      // 检查 hash
-      const hash = window.location.hash.replace('#', '')
-      if (['dashboard', 'classes', 'users', 'exams', 'announcement', 'reminder', 'codes'].includes(hash)) {
-        switchTab(hash)
-      } else {
-        switchTab('dashboard')
-      }
-
-      const token = getAdminToken()
-      if (token) {
-        try {
-          const res = await fetch('/api/admin/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token })
-          })
-          const json = await res.json()
-          if (json.code === 0) {
-            hideAuthModal()
-            startApp()
-            return
-          }
-        } catch (e) {
-          console.warn('自动验证口令失败:', e)
-        }
-      }
-      showAuthModal()
-    })
-
-    function startApp() {
-      loadAllData()
-      if (autoPollingTimer) clearInterval(autoPollingTimer)
-      autoPollingTimer = setInterval(() => {
-        loadAllData(true)
-      }, 15000)
-    }
-
-    // 切换 Tab
-    function switchTab(tabId) {
-      currentTab = tabId
-      window.location.hash = tabId
-
-      // 切换导航高亮
-      document.querySelectorAll('.nav-item').forEach(btn => {
-        btn.classList.remove('text-indigo-600', 'bg-indigo-50', 'font-semibold')
-        btn.classList.add('text-slate-600', 'font-medium')
-      })
-      const activeNav = document.getElementById(`nav-${tabId}`)
-      if (activeNav) {
-        activeNav.classList.remove('text-slate-600', 'font-medium')
-        activeNav.classList.add('text-indigo-600', 'bg-indigo-50', 'font-semibold')
-      }
-
-      // 切换视图容器
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'))
-      const activeContent = document.getElementById(`tab-${tabId}`)
-      if (activeContent) activeContent.classList.add('active')
-
-      // 按需加载特定模块
-      if (tabId === 'announcement') loadAnnouncementData()
-      if (tabId === 'codes') loadCodesData()
-      if (tabId === 'reminder') loadReminderData()
-    }
-
-    function refreshCurrentTab(showTip = false) {
-      if (showTip) showToast('正在刷新当前页面数据...', 'info')
-      loadAllData()
-      if (currentTab === 'announcement') loadAnnouncementData()
-      if (currentTab === 'codes') loadCodesData()
-      if (currentTab === 'reminder') loadReminderData()
-    }
-
-    // 全量拉取 Dashboard 与用户数据
-    async function loadAllData(isSilent = false) {
-      loadCloudStatus()
-      try {
-        const res = await adminFetch('/api/admin/dashboard')
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          globalStats = json.data
-          renderDashboard(globalStats)
-          populateClassSelectOptions(globalStats)
-          renderUsersTable(globalStats.users || [])
-          renderExamsTable(globalStats.allExams || [])
-          
-          // 如果当前正处于班级查询页，顺便刷新当前班级学生
-          if (currentSelectedClass) {
-            renderCurrentClassDetails(currentSelectedClass)
-          }
-        }
-      } catch (err) {
-        if (!isSilent) console.error('拉取大屏数据失败:', err)
-      }
-    }
-
-    // 微信云托管实时探活与状态监控
-    async function loadCloudStatus() {
-      try {
-        const res = await adminFetch('/api/admin/cloud-status')
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          const { cloud, sync } = json.data
-          const badge = document.getElementById('cloudStatusBadge')
-          const text = document.getElementById('cloudStatusText')
-          const ping = document.getElementById('cloudPingText')
-          const syncText = document.getElementById('cloudLastSyncText')
-
-          if (badge && text && ping) {
-            if (cloud.healthy) {
-              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
-              text.innerText = `探活正常 (${cloud.statusCode || 200} OK)`
-              ping.innerText = `探活延迟: ${cloud.pingMs || 0} ms`
-            } else {
-              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200'
-              text.innerText = '云端连接异常'
-              ping.innerText = `错误: ${cloud.error || '超时'}`
-            }
-          }
-
-          if (syncText && sync && sync.lastSyncAt) {
-            const diffSec = Math.max(0, Math.round((Date.now() - sync.lastSyncAt) / 1000))
-            if (diffSec < 60) {
-              syncText.innerText = `最近同步: ${diffSec}秒前`
-            } else {
-              syncText.innerText = `最近同步: ${Math.round(diffSec / 60)}分钟前`
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('获取微信云托管状态失败:', e)
-      }
-    }
-
-    // 渲染总览大屏
-    function renderDashboard(data) {
-      const ov = data.overview || {}
-      document.getElementById('statTotalUsers').innerText = (ov.totalUsers || (data.users ? data.users.length : 0)).toLocaleString()
-      document.getElementById('statProfileDone').innerText = (ov.completedProfiles || 0).toLocaleString()
-      document.getElementById('statTotalExams').innerText = (ov.totalExamsFinished || (data.allExams ? data.allExams.length : 0)).toLocaleString()
-      document.getElementById('statTotalPractices').innerText = (ov.totalPracticesStarted || 0).toLocaleString()
-      document.getElementById('statPassRate').innerText = `${ov.examPassRate || 0}%`
-      const elTotalEvents = document.getElementById('statTotalEvents')
-      if (elTotalEvents) elTotalEvents.innerText = (ov.totalEvents || 0).toLocaleString()
-      const elActiveToday = document.getElementById('statActiveToday')
-      if (elActiveToday) elActiveToday.innerText = `${(ov.activeUsersToday || 0).toLocaleString()} 人`
-      const elTodayEvents = document.getElementById('statTodayEvents')
-      if (elTodayEvents) elTodayEvents.innerText = (ov.todayEvents || 0).toLocaleString()
-
-      // 渲染微信小程序平台 · 官方核心指标 (DataCube 实时数据)
-      const wx = data.wechatOfficial
-      if (wx && wx.visitTotal) {
-        const fmtRate = (rate) => {
-          const r = Number(rate || 0)
-          return r >= 0 ? `↑ ${r}%` : `↓ ${Math.abs(r)}%`
-        }
-        const periodEl = document.getElementById('wxOfficialPeriodText')
-        if (periodEl && wx.refDate) {
-          periodEl.innerText = `数据周期：${wx.refDate} 官方核算`
-        }
-        const totalEl = document.getElementById('wxOfficialTotalUsers')
-        if (totalEl) totalEl.innerText = Number(wx.visitTotal || 0).toLocaleString()
-        const totalSubEl = document.getElementById('wxOfficialTotalUsersSub')
-        if (totalSubEl) {
-          const diff = Number(wx.visitTotalDiff || wx.visitUvNew || 0)
-          totalSubEl.innerHTML = `<span>${fmtRate(wx.visitTotalGrowthRate)} 日环比 (${diff >= 0 ? '+' + diff : diff}人)</span>`
-        }
-        const sessionEl = document.getElementById('wxOfficialSessionCnt')
-        if (sessionEl) sessionEl.innerText = Number(wx.sessionCnt || 0).toLocaleString()
-        const sessionSubEl = document.getElementById('wxOfficialSessionCntSub')
-        if (sessionSubEl) {
-          sessionSubEl.innerHTML = `<span>昨日访问 PV: ${Number(wx.visitPv || 0).toLocaleString()} 次 (${fmtRate(wx.sessionCntGrowthRate)})</span>`
-        }
-        const uvEl = document.getElementById('wxOfficialVisitUv')
-        if (uvEl) uvEl.innerText = Number(wx.visitUv || 0).toLocaleString()
-        const uvSubEl = document.getElementById('wxOfficialVisitUvSub')
-        if (uvSubEl) {
-          uvSubEl.innerHTML = `<span>人均停留 ${wx.stayTimeUv || 0} 秒 (${fmtRate(wx.visitUvGrowthRate)} 日环比)</span>`
-        }
-        const newEl = document.getElementById('wxOfficialVisitUvNew')
-        if (newEl) newEl.innerText = Number(wx.visitUvNew || 0).toLocaleString()
-        const newSubEl = document.getElementById('wxOfficialVisitUvNewSub')
-        if (newSubEl) {
-          newSubEl.innerHTML = `<span>昨日分享转发 ${wx.sharePv || 0} 次 (${wx.shareUv || 0}人)</span>`
-        }
-      }
-
-      // 热门班级渲染（支持点击直达班级查询）
-      const classList = data.classStats || data.classGroups || []
-      const rankBox = document.getElementById('classRankList')
-      if (classList.length > 0) {
-        rankBox.innerHTML = classList.slice(0, 8).map((cg, idx) => `
-          <div onclick="jumpToClassQuery('${escapeHtml(cg.className)}')" class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-slate-50 transition cursor-pointer group border-b border-slate-50 last:border-0">
-            <div class="flex items-center space-x-2">
-              <span class="w-5 h-5 rounded-full ${idx < 3 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-[10px]">${idx + 1}</span>
-              <span class="font-medium text-slate-800 group-hover:text-indigo-600">${escapeHtml(cg.className)}</span>
-            </div>
-            <div class="flex items-center space-x-2">
-              <span class="text-slate-500 font-semibold">${cg.studentCount || cg.userCount || 0} 位同学</span>
-              <span class="text-slate-300 group-hover:text-indigo-500">›</span>
-            </div>
-          </div>
-        `).join('')
-      } else {
-        rankBox.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">暂无班级分布数据</p>'
-      }
-
-      // 最近动态
-      const allExams = data.allExams || []
-      const actBox = document.getElementById('recentActivityList')
-      if (allExams.length > 0) {
-        actBox.innerHTML = allExams.slice(0, 5).map(e => `
-          <div class="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0">
-            <div>
-              <span class="font-semibold text-slate-900">${escapeHtml(e.realName || '未知考生')}</span>
-              <span class="text-slate-400 ml-1">(${escapeHtml(e.className || '--')})</span>
-            </div>
-            <div class="flex items-center space-x-2">
-              <span class="font-bold ${e.isPassed ? 'text-emerald-600' : 'text-amber-600'}">${e.score}/${e.total}分</span>
-              <span class="text-[10px] text-slate-400">${formatTime(e.createdAt)}</span>
-            </div>
-          </div>
-        `).join('')
-      } else {
-        actBox.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">暂无近期答卷记录</p>'
-      }
-    }
-
-    // 填充班级下拉选项
-    function populateClassSelectOptions(data) {
-      const select = document.getElementById('classSelectDropdown')
-      const currentVal = select.value
-      const classList = data.classStats || []
-
-      if (classList.length === 0) return
-
-      let optionsHtml = '<option value="">-- 请选择需要查询的班级 (共 ' + classList.length + ' 个班级) --</option>'
-      classList.forEach(c => {
-        optionsHtml += `<option value="${escapeHtml(c.className)}">${escapeHtml(c.className)} (${c.studentCount}人 · 档案完善率 ${c.completedRate || 0}%)</option>`
-      })
-      select.innerHTML = optionsHtml
-      if (currentVal) select.value = currentVal
-    }
-
-    // 点击大屏的班级直接跳转并选中该班
-    function jumpToClassQuery(className) {
-      switchTab('classes')
-      const select = document.getElementById('classSelectDropdown')
-      select.value = className
-      onSelectClassChange()
-    }
-
-    // 下拉选择班级触发
-    function onSelectClassChange() {
-      const select = document.getElementById('classSelectDropdown')
-      const selectedClass = select.value
-      currentSelectedClass = selectedClass
-      document.getElementById('classStudentSearchInput').value = ''
-      renderCurrentClassDetails(selectedClass)
-    }
-
-    // 渲染指定班级的详细卡片与学生名单
-    function renderCurrentClassDetails(className) {
-      const overviewCard = document.getElementById('classOverviewCard')
-      const exportBtnWrapper = document.getElementById('classExportBtnWrapper')
-      const tbody = document.getElementById('classStudentsTableBody')
-      const countText = document.getElementById('classTableCountText')
-
-      if (!className) {
-        overviewCard.classList.add('hidden')
-        exportBtnWrapper.classList.add('hidden')
-        countText.innerText = '请先在上方选择班级'
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="9" class="py-12 text-center text-slate-400">
-              <div class="text-2xl mb-1">🔍</div>
-              <div>请在上方下拉菜单中选择一个班级以查看其全体同学信息</div>
-            </td>
-          </tr>
-        `
-        return
-      }
-
-      overviewCard.classList.remove('hidden')
-      exportBtnWrapper.classList.remove('hidden')
-
-      // 获取该班统计
-      const classStats = (globalStats && globalStats.classStats) || []
-      const cStat = classStats.find(c => c.className === className) || {}
-
-      // 获取该班所有学生
-      const allUsers = (globalStats && globalStats.users) || []
-      const classUsers = allUsers.filter(u => (u.className || '').trim() === className.trim())
-
-      // 班级卡片赋值
-      document.getElementById('activeClassName').innerText = className
-      document.getElementById('activeClassTotal').innerText = classUsers.length
-      const completedCount = classUsers.filter(u => u.isProfileCompleted).length
-      document.getElementById('activeClassCompleted').innerText = completedCount
-      const rate = classUsers.length > 0 ? Math.round((completedCount / classUsers.length) * 100) : 0
-      document.getElementById('activeClassRate').innerText = `${rate}%`
-      document.getElementById('activeClassAvgScore').innerText = `${cStat.avgScore || 0} 分`
-      document.getElementById('activeClassMaxScore').innerText = `${cStat.maxScore || 0} 分`
-
-      // 渲染表格
-      countText.innerText = `当前班级共 ${classUsers.length} 位同学`
-      renderClassStudentsTable(classUsers)
-    }
-
-    // 渲染该班级成员表格
-    function renderClassStudentsTable(students) {
-      const tbody = document.getElementById('classStudentsTableBody')
-      if (!students || students.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-slate-400">该班暂无匹配学生</td></tr>'
-        return
-      }
-
-      tbody.innerHTML = students.map((u, idx) => `
-        <tr class="hover:bg-slate-50 transition">
-          <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">
-            <div class="flex items-center space-x-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
-              </div>
-              <span>${escapeHtml(u.realName || u.nickname || '未登记姓名')}</span>
-            </div>
-          </td>
-          <td class="py-3 px-4 font-mono font-semibold text-slate-700">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
-          <td class="py-3 px-4 font-mono text-slate-600">${escapeHtml(u.studentId || '--')}</td>
-          <td class="py-3 px-4 font-semibold">${u.examCount || 0} 次</td>
-          <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0} 分</td>
-          <td class="py-3 px-4">${u.avgAccuracy ? u.avgAccuracy + '%' : '--'}</td>
-          <td class="py-3 px-4">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">
-              ${u.isProfileCompleted ? '已完善' : '待完善'}
-            </span>
-          </td>
-          <td class="py-3 px-4 text-right">
-            <button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">查看档案</button>
-          </td>
-        </tr>
-      `).join('')
-    }
-
-    // 在当前班级内二次打字搜索
-    function filterCurrentClassStudents() {
-      if (!currentSelectedClass || !globalStats || !globalStats.users) return
-      const keyword = (document.getElementById('classStudentSearchInput').value || '').trim().toLowerCase()
-      const classUsers = globalStats.users.filter(u => (u.className || '').trim() === currentSelectedClass.trim())
-
-      if (!keyword) {
-        renderClassStudentsTable(classUsers)
-        return
-      }
-
-      const filtered = classUsers.filter(u => 
-        (u.realName && u.realName.toLowerCase().includes(keyword)) ||
-        (u.phone && u.phone.includes(keyword)) ||
-        (u.studentId && u.studentId.includes(keyword))
-      )
-      renderClassStudentsTable(filtered)
-    }
-
-    // 一键导出当前选中班级学生名单 CSV
-    function exportCurrentClassCsv() {
-      if (!currentSelectedClass) return
-      const url = `/api/admin/export/users.csv?className=${encodeURIComponent(currentSelectedClass)}&token=${encodeURIComponent(getAdminToken())}`
-      window.open(url, '_blank')
-    }
-
-    // 渲染全校考生名册表格
-    function renderUsersTable(users) {
-      const tbody = document.getElementById('usersTableBody')
-      if (!users || users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-slate-400">名册暂无匹配考生</td></tr>'
-        return
-      }
-
-      tbody.innerHTML = users.map(u => `
-        <tr class="hover:bg-slate-50 transition">
-          <td class="py-3 px-4 font-semibold text-slate-900">
-            <div class="flex items-center space-x-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
-              </div>
-              <span>${escapeHtml(u.realName || u.nickname || '未登记')}</span>
-            </div>
-          </td>
-          <td class="py-3 px-4">
-            <span onclick="jumpToClassQuery('${escapeHtml(u.className || '')}')" class="text-indigo-600 hover:underline cursor-pointer font-medium">${escapeHtml(u.className || '--')}</span>
-          </td>
-          <td class="py-3 px-4 font-mono text-slate-600">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
-          <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(u.studentId || '--')}</td>
-          <td class="py-3 px-4 font-semibold">${u.examCount || 0} 次</td>
-          <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0}</td>
-          <td class="py-3 px-4">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">
-              ${u.isProfileCompleted ? '已完善' : '未完善'}
-            </span>
-          </td>
-          <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(u.lastLoginAt || u.createdAt)}</td>
-          <td class="py-3 px-4 text-right">
-            <button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">详情</button>
-          </td>
-        </tr>
-      `).join('')
-    }
-
-    // 搜索全校考生
-    function handleUserSearch() {
-      if (!globalStats || !globalStats.users) return
-      const keyword = (document.getElementById('userSearchInput').value || '').trim().toLowerCase()
-      const filter = document.getElementById('userFilterSelect').value
-
-      let filtered = globalStats.users
-      if (filter === 'completed') filtered = filtered.filter(u => u.isProfileCompleted)
-      if (filter === 'pending') filtered = filtered.filter(u => !u.isProfileCompleted)
-
-      if (keyword) {
-        filtered = filtered.filter(u => 
-          (u.realName && u.realName.toLowerCase().includes(keyword)) ||
-          (u.className && u.className.toLowerCase().includes(keyword)) ||
-          (u.phone && u.phone.includes(keyword)) ||
-          (u.studentId && u.studentId.includes(keyword))
-        )
-      }
-      renderUsersTable(filtered)
-    }
-
-    // 渲染考试记录
-    function renderExamsTable(exams) {
-      const tbody = document.getElementById('examsTableBody')
-      if (!exams || exams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">暂无模考记录</td></tr>'
-        return
-      }
-
-      tbody.innerHTML = exams.map(e => `
-        <tr class="hover:bg-slate-50 transition">
-          <td class="py-3 px-4 text-slate-500">${formatTime(e.createdAt)}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(e.realName || '--')}</td>
-          <td class="py-3 px-4 text-slate-600">${escapeHtml(e.className || '--')}</td>
-          <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(e.phone || '--')}</td>
-          <td class="py-3 px-4">${escapeHtml(e.bankTitle || '默认题库')}</td>
-          <td class="py-3 px-4 font-bold text-slate-900">${e.score ?? 0} / ${e.total ?? 100}</td>
-          <td class="py-3 px-4 font-semibold ${e.accuracy >= 60 ? 'text-emerald-600' : 'text-rose-600'}">${e.accuracy ?? 0}%</td>
-          <td class="py-3 px-4">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${e.isPassed ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}">
-              ${e.isPassed ? '及格' : '不及格'}
-            </span>
-          </td>
-        </tr>
-      `).join('')
-    }
-
-    // 公告数据加载与实时预览
-    async function loadAnnouncementData() {
-      try {
-        const res = await adminFetch('/api/announcement/admin?token=' + encodeURIComponent(getAdminToken()))
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          const cfg = json.data.config || json.data
-          document.getElementById('annEnabled').checked = Boolean(cfg.enabled)
-          document.getElementById('annTitle').value = cfg.title || ''
-          document.getElementById('annText').value = cfg.text || ''
-          document.getElementById('annContact').value = cfg.contactValue || ''
-          document.getElementById('annShowMode').value = cfg.showMode || 'always'
-          document.getElementById('annImage').value = cfg.image || ''
-          updateAnnouncementPreview()
-        }
-      } catch (err) {
-        console.warn('拉取公告失败:', err)
-      }
-    }
-
-    function updateAnnouncementPreview() {
-      const enabled = document.getElementById('annEnabled').checked
-      const title = document.getElementById('annTitle').value || '最新公告'
-      const text = document.getElementById('annText').value || '暂无内容'
-      const contact = document.getElementById('annContact').value || 'Corwin07'
-      const img = document.getElementById('annImage').value || ''
-
-      document.getElementById('prevTitle').innerText = title
-      document.getElementById('prevText').innerText = text
-      document.getElementById('prevContact').innerText = contact.split('/')[0] || contact
-      const imgEl = document.getElementById('prevImg')
-      if (img) {
-        imgEl.src = img
-        imgEl.parentElement.style.display = 'flex'
-      } else {
-        imgEl.parentElement.style.display = 'none'
-      }
-      document.getElementById('previewCard').style.opacity = enabled ? '1' : '0.4'
-    }
-
-    async function saveAnnouncementConfig() {
-      const btn = document.getElementById('btnSaveAnn')
-      btn.disabled = true
-      btn.innerText = '正在保存并广播...'
-      try {
-        const payload = {
-          enabled: document.getElementById('annEnabled').checked,
-          title: document.getElementById('annTitle').value,
-          text: document.getElementById('annText').value,
-          contactValue: document.getElementById('annContact').value,
-          showMode: document.getElementById('annShowMode').value,
-          image: document.getElementById('annImage').value,
-        }
-        const res = await adminFetch('/api/announcement/admin?token=' + encodeURIComponent(getAdminToken()), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast('公告已保存并实时同步给全体小程序用户！', 'success')
-        } else {
-          showToast(json.message || '保存失败', 'error')
-        }
-      } catch (e) {
-        showToast('保存异常: ' + e.message, 'error')
-      } finally {
-        btn.disabled = false
-        btn.innerText = '保存并实时同步给全体小程序用户'
-      }
-    }
-
-    // 激活码管理
-    async function loadCodesData() {
-      try {
-        const res = await adminFetch('/api/admin/activation-codes')
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          const list = json.data.allList || []
-          const tbody = document.getElementById('codesTableBody')
-          if (list.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">暂无激活码</td></tr>'
-            return
-          }
-          tbody.innerHTML = list.map(c => `
-            <tr class="hover:bg-slate-50 transition">
-              <td class="py-3 px-4 font-mono font-bold text-slate-900">${escapeHtml(c.code)}</td>
-              <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${c.isUsed ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
-                  ${c.isUsed ? '已使用' : '未使用'}
-                </span>
-              </td>
-              <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(c.usedByUserRealName || '--')}</td>
-              <td class="py-3 px-4 text-slate-600">${escapeHtml(c.usedByUserClass || '--')}</td>
-              <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(c.usedByUserPhone || '--')}</td>
-              <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(c.usedAt)}</td>
-              <td class="py-3 px-4 text-right">
-                ${!c.isUsed ? `<button onclick="deleteCode('${c.code}')" class="text-rose-600 hover:text-rose-800 font-medium">删除</button>` : '--'}
-              </td>
-            </tr>
-          `).join('')
-        }
-      } catch (err) {
-        console.warn('拉取激活码失败:', err)
-      }
-    }
-
-    async function batchGenerateCodesPrompt() {
-      const countStr = prompt('请输入需要批量生成的激活码数量 (如: 10):', '10')
-      if (!countStr) return
-      const count = parseInt(countStr, 10)
-      if (isNaN(count) || count <= 0) return alert('请输入有效数字')
-      
-      const prefix = prompt('请输入激活码前缀 (默认 VIP):', 'VIP') || 'VIP'
-      try {
-        const res = await adminFetch('/api/admin/activation-codes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ count, prefix })
-        })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast(`已成功批量生成 ${count} 个激活码！`, 'success')
-          loadCodesData()
-        }
-      } catch (e) {
-        showToast('生成异常: ' + e.message, 'error')
-      }
-    }
-
-    async function deleteCode(code) {
-      if (!confirm(`确定要删除激活码 ${code} 吗？`)) return
-      try {
-        const res = await adminFetch(`/api/admin/activation-codes/${encodeURIComponent(code)}`, { method: 'DELETE' })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast('激活码已删除', 'success')
-          loadCodesData()
-        } else {
-          showToast(json.message || '删除失败', 'error')
-        }
-      } catch (e) {
-        showToast('删除失败: ' + e.message, 'error')
-      }
-    }
-
-    // 上课提醒与电费预警配置数据
-    async function loadReminderData() {
-      try {
-        const res = await adminFetch('/api/reminder/admin')
-        const json = await res.json()
-        if (json.code === 0 && json.data && json.data.config) {
-          const cfg = json.data.config
-          const tplEl = document.getElementById('remindTemplateId')
-          const elecEl = document.getElementById('electricityTemplateId')
-          const finEl = document.getElementById('financeJsessionId')
-          const aheadEl = document.getElementById('remindAheadMinutes')
-          if (tplEl && cfg.templateId) tplEl.value = cfg.templateId
-          if (elecEl && cfg.electricityTemplateId) elecEl.value = cfg.electricityTemplateId
-          if (finEl && cfg.financeJsessionId) finEl.value = cfg.financeJsessionId
-          if (aheadEl && cfg.defaultAheadMinutes) aheadEl.value = cfg.defaultAheadMinutes
-        }
-      } catch (e) {
-        console.warn('读取提醒配置失败:', e)
-      }
-    }
-    async function saveReminderConfig() {
-      try {
-        const templateId = (document.getElementById('remindTemplateId')?.value || '').trim()
-        const electricityTemplateId = (document.getElementById('electricityTemplateId')?.value || '').trim()
-        const financeJsessionId = (document.getElementById('financeJsessionId')?.value || '').trim()
-        const defaultAheadMinutes = parseInt(document.getElementById('remindAheadMinutes')?.value || '20', 10) || 20
-        const res = await adminFetch('/api/reminder/admin', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ templateId, electricityTemplateId, financeJsessionId, defaultAheadMinutes })
-        })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast('提醒与低电费预警配置已保存！', 'success')
-        } else {
-          showToast(json.message || '保存失败', 'error')
-        }
-      } catch (e) {
-        showToast('保存异常: ' + e.message, 'error')
-      }
-    }
-
-    // 手动一键拉取线上真实考生数据
-    async function syncFromCloudBaseAction() {
-      const btn = document.getElementById('btnSyncCloud')
-      btn.disabled = true
-      btn.innerText = '正在同步中...'
-      showToast('正在从云端拉取 500+ 真实考生档案与成绩...', 'info')
-      try {
-        const res = await adminFetch('/api/admin/sync-cloud', { method: 'POST' })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast(json.message, 'success')
-          loadAllData()
-        } else {
-          showToast(json.message || '同步失败', 'error')
-        }
-      } catch (e) {
-        showToast('网络同步异常: ' + e.message, 'error')
-      } finally {
-        btn.disabled = false
-        btn.innerHTML = `<svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>一键拉取最新线上数据`
-      }
-    }
-
-    function escapeHtml(str) {
-      if (!str) return ''
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    }
-
-    function formatTime(ts) {
-      if (!ts) return '--'
-      const d = new Date(ts)
-      return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-    }
-
-    function showToast(msg, type = 'success') {
-      const el = document.getElementById('toast')
-      document.getElementById('toastMsg').innerText = msg
-      document.getElementById('toastIcon').innerText = type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ')
-      el.classList.remove('translate-y-20', 'opacity-0')
-      setTimeout(() => {
-        el.classList.add('translate-y-20', 'opacity-0')
-      }, 3000)
-    }
-
-    function showUserDetailModal(userId) {
-      if (!globalStats || !globalStats.users) return
-      const user = globalStats.users.find(u => u.id === userId)
-      if (!user) return
-      alert(`【考生详情档案】\n真实姓名: ${user.realName || '--'}\n所在班级: ${user.className || '--'}\n电话号码: ${user.phone || '--'}\n学号: ${user.studentId || '--'}\n累计登录: ${user.loginCount || 1} 次\n已考次数: ${user.examCount || 0} 次\n最高得分: ${user.maxScore || 0} 分`)
-    }
-  </script>
+  <div id="toast" class="alert alert-important alert-info alert-dismissible" role="alert">
+    <div class="d-flex">
+      <div><span id="toastIcon">ℹ</span></div>
+      <div class="ms-2" id="toastMsg">提示</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+  <script src="/js/admin-app.js"></script>
 </body>
 </html>

@@ -120,7 +120,7 @@ router.get('/leaderboard', optionalAuth, (req, res) => {
 function isAuthorizedAdmin(token) {
   const t = String(token || '').trim()
   const currentToken = String(config.adminToken || 'woxiangxingfu').trim()
-  return Boolean(t && (t === currentToken || t === 'woxiangxingfu' || t === 'studymaster2026'))
+  return Boolean(t && (t === currentToken || t === 'woxiangxingfu' ))
 }
 
 /**
@@ -209,20 +209,24 @@ router.get('/user/:id', adminAuth, (req, res) => {
 })
 
 /**
- * 导出学生名册与答题统计 CSV (支持 ?className=xxx 过滤单个班级)
+ * 导出学生名册与答题统计 CSV (支持 ?className=xxx / ?college=xxx 过滤)
  * GET /api/admin/export/users.csv
  */
 router.get('/export/users.csv', adminAuth, (req, res) => {
   const stats = db.getStats()
   let users = stats.users || []
   const filterClass = (req.query.className || '').trim()
+  const filterCollege = (req.query.college || '').trim()
 
   if (filterClass) {
     users = users.filter(u => (u.className || '').trim() === filterClass)
   }
+  if (filterCollege) {
+    users = users.filter(u => ((u.college || '').trim() || '未归属学院') === filterCollege)
+  }
 
   // CSV 头部（带 UTF-8 BOM，确保 Windows Excel 打开不乱码）
-  let csv = '\uFEFF序号,真实姓名,班级,学号,电话号码,绑定激活码,信息完善状态,模考次数,最高得分,平均得分,平均正确率,刷题次数,登录次数,注册时间,最后登录时间\n'
+  let csv = '\uFEFF序号,真实姓名,学院,班级,学号,电话号码,绑定激活码,信息完善状态,模考次数,最高得分,平均得分,平均正确率,刷题次数,登录次数,注册时间,最后登录时间\n'
 
   users.forEach((u, idx) => {
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }).replace(',', '') : '--'
@@ -231,6 +235,7 @@ router.get('/export/users.csv', adminAuth, (req, res) => {
     const row = [
       idx + 1,
       escapeCsv(u.realName || u.nickname || '未命名'),
+      escapeCsv(u.college || '未归属学院'),
       escapeCsv(u.className || '--'),
       escapeCsv(u.studentId || '--'),
       escapeCsv(u.displayPhone || u.phone || '--'),
@@ -248,7 +253,9 @@ router.get('/export/users.csv', adminAuth, (req, res) => {
     csv += row.join(',') + '\n'
   })
 
-  const fileNamePrefix = filterClass ? `studymaster_${encodeURIComponent(filterClass)}_students` : 'studymaster_students'
+  let fileNamePrefix = 'studymaster_students'
+  if (filterCollege) fileNamePrefix = `studymaster_${encodeURIComponent(filterCollege)}_students`
+  if (filterClass) fileNamePrefix = `studymaster_${encodeURIComponent(filterClass)}_students`
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename=${fileNamePrefix}_${Date.now()}.csv`)
   return res.send(csv)

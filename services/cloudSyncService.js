@@ -87,10 +87,10 @@ async function syncFromCloudBase(force = false) {
       axios
         .get(`${REMOTE_URL}/api/admin/dashboard`, {
           timeout: 15000,
-          params: { token: 'studymaster2026' },
+          params: { token: config.adminToken },
           headers: {
             'User-Agent': 'StudyMaster-Sync/1.0',
-            'x-admin-token': config.adminToken || 'studymaster2026',
+            'x-admin-token': config.adminToken,
           },
         })
         .catch((err) => {

@@ -1,0 +1,28 @@
+
+:root { --tblr-font-sans-serif: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+.tab-content { display: none !important; }
+.tab-content.active { display: block !important; }
+.nav-item.active, .nav-item.active-nav {
+  background: rgba(32, 107, 196, 0.08) !important;
+  color: #206bc4 !important;
+  font-weight: 600;
+}
+#adminAuthModal {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+#adminAuthModal.hidden { display: none !important; }
+#toast {
+  position: fixed; top: 1rem; right: 1rem; z-index: 3000;
+  min-width: 240px; max-width: 420px;
+  display: none;
+}
+#toast.show { display: block; }
+.college-card { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+.college-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(32,107,196,.15); }
+.preview-phone {
+  width: 280px; border: 8px solid #1e293b; border-radius: 28px;
+  background: #f8fafc; overflow: hidden; min-height: 420px;
+}

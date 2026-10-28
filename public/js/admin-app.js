@@ -1,0 +1,1053 @@
+
+    let globalStats = null
+    let currentTab = 'dashboard'
+    let currentSelectedClass = ''
+    let autoPollingTimer = null
+
+    // ── 管理员密码验证与口令缓存 ─────────────────────────────
+    function getAdminToken() {
+      return localStorage.getItem('yanxiaogong_admin_token') || sessionStorage.getItem('yanxiaogong_admin_token') || ''
+    }
+
+    function setAdminToken(token, remember = true) {
+      if (remember) {
+        localStorage.setItem('yanxiaogong_admin_token', token)
+      } else {
+        sessionStorage.setItem('yanxiaogong_admin_token', token)
+      }
+    }
+
+    function clearAdminToken() {
+      localStorage.removeItem('yanxiaogong_admin_token')
+      sessionStorage.removeItem('yanxiaogong_admin_token')
+    }
+
+    function showAuthModal(errMsg = '') {
+      const modal = document.getElementById('adminAuthModal')
+      const errBox = document.getElementById('adminAuthError')
+      if (modal) {
+        modal.classList.remove('hidden')
+        modal.style.display = 'flex'
+      }
+      if (errBox) {
+        if (errMsg) {
+          errBox.innerText = errMsg
+          errBox.classList.remove('hidden')
+        } else {
+          errBox.classList.add('hidden')
+        }
+      }
+      const input = document.getElementById('adminPasswordInput')
+      if (input) {
+        input.value = ''
+        setTimeout(() => input.focus(), 100)
+      }
+    }
+
+    function hideAuthModal() {
+      const modal = document.getElementById('adminAuthModal')
+      if (modal) {
+        modal.classList.add('hidden')
+        modal.style.display = 'none'
+      }
+      const errBox = document.getElementById('adminAuthError')
+      if (errBox) errBox.classList.add('hidden')
+    }
+
+    function togglePasswordVisibility() {
+      const input = document.getElementById('adminPasswordInput')
+      if (input) {
+        input.type = input.type === 'password' ? 'text' : 'password'
+      }
+    }
+
+    async function handleAuthSubmit(e) {
+      if (e) e.preventDefault()
+      const input = document.getElementById('adminPasswordInput')
+      const password = (input ? input.value : '').trim()
+      const remember = document.getElementById('rememberPasswordCheck')?.checked ?? true
+      const btn = document.getElementById('adminAuthSubmitBtn')
+      const errBox = document.getElementById('adminAuthError')
+
+      if (!password) {
+        if (errBox) {
+          errBox.innerText = '请输入管理员密码'
+          errBox.classList.remove('hidden')
+        }
+        return
+      }
+
+      if (btn) {
+        btn.disabled = true
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 验证中...`
+      }
+
+      try {
+        const res = await fetch('/api/admin/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          const token = (json.data && json.data.token) || password
+          setAdminToken(token, remember)
+          hideAuthModal()
+          showToast('管理员身份验证成功！欢迎进入控制台', 'success')
+          startApp()
+        } else {
+          if (errBox) {
+            errBox.innerText = json.message || '密码错误，请重新输入'
+            errBox.classList.remove('hidden')
+          }
+        }
+      } catch (err) {
+        if (errBox) {
+          errBox.innerText = '验证连接异常，请重试: ' + err.message
+          errBox.classList.remove('hidden')
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false
+          btn.innerHTML = '验证并进入控制台'
+        }
+      }
+    }
+
+    function adminLogout() {
+      if (confirm('确定要退出管理员登录并锁定后台吗？')) {
+        clearAdminToken()
+        if (autoPollingTimer) {
+          clearInterval(autoPollingTimer)
+          autoPollingTimer = null
+        }
+        showAuthModal('已安全退出登录，请重新输入密码')
+      }
+    }
+
+    // 封装统一鉴权请求
+    async function adminFetch(url, options = {}) {
+      const token = getAdminToken()
+      options.headers = options.headers || {}
+      if (token) {
+        if (options.headers instanceof Headers) {
+          options.headers.set('x-admin-token', token)
+        } else {
+          options.headers['x-admin-token'] = token
+        }
+      }
+      const res = await fetch(url, options)
+      if (res.status === 401) {
+        clearAdminToken()
+        showAuthModal('登录口令已过期或未授权，请输入管理员密码')
+        throw new Error('未授权')
+      }
+      return res
+    }
+
+    function exportUsersCsv(e) {
+      if (e) e.preventDefault()
+      window.open(`/api/admin/export/users.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
+    }
+    function exportExamsCsv(e) {
+      if (e) e.preventDefault()
+      window.open(`/api/admin/export/exams.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
+    }
+    function exportUnusedCodes(e) {
+      if (e) e.preventDefault()
+      window.open(`/api/admin/export/unused-codes?token=${encodeURIComponent(getAdminToken())}`, '_blank')
+    }
+
+    // 页面加载入口
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 检查 hash
+      const hash = window.location.hash.replace('#', '')
+      if (['dashboard', 'colleges', 'classes', 'users', 'exams', 'announcement', 'reminder', 'codes'].includes(hash)) {
+        switchTab(hash)
+      } else {
+        switchTab('dashboard')
+      }
+
+      const token = getAdminToken()
+      if (token) {
+        try {
+          const res = await fetch('/api/admin/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          })
+          const json = await res.json()
+          if (json.code === 0) {
+            hideAuthModal()
+            startApp()
+            return
+          }
+        } catch (e) {
+          console.warn('自动验证口令失败:', e)
+        }
+      }
+      showAuthModal()
+    })
+
+    function startApp() {
+      loadAllData()
+      if (autoPollingTimer) clearInterval(autoPollingTimer)
+      autoPollingTimer = setInterval(() => {
+        loadAllData(true)
+      }, 15000)
+    }
+
+    // 切换 Tab
+    function switchTab(tabId) {
+      currentTab = tabId
+      window.location.hash = tabId
+
+      // 切换导航高亮（兼容 Tailwind 旧类 + Tabler active）
+      document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.classList.remove('text-indigo-600', 'bg-indigo-50', 'font-semibold', 'active-nav', 'text-indigo-700', 'active')
+        btn.classList.add('text-slate-600', 'font-medium')
+      })
+      const activeNav = document.getElementById(`nav-${tabId}`)
+      if (activeNav) {
+        activeNav.classList.remove('text-slate-600', 'font-medium')
+        activeNav.classList.add('text-indigo-700', 'bg-indigo-50', 'font-semibold', 'active-nav', 'active')
+      }
+      if (tabId === 'colleges') renderCollegeCards()
+
+      // 切换视图容器
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'))
+      const activeContent = document.getElementById(`tab-${tabId}`)
+      if (activeContent) activeContent.classList.add('active')
+
+      // 按需加载特定模块
+      if (tabId === 'announcement') loadAnnouncementData()
+      if (tabId === 'codes') loadCodesData()
+      if (tabId === 'reminder') loadReminderData()
+    }
+
+    function refreshCurrentTab(showTip = false) {
+      if (showTip) showToast('正在刷新当前页面数据...', 'info')
+      loadAllData()
+      if (currentTab === 'announcement') loadAnnouncementData()
+      if (currentTab === 'codes') loadCodesData()
+      if (currentTab === 'reminder') loadReminderData()
+    }
+
+    // 全量拉取 Dashboard 与用户数据
+    async function loadAllData(isSilent = false) {
+      loadCloudStatus()
+      try {
+        const res = await adminFetch('/api/admin/dashboard')
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          globalStats = json.data
+          renderDashboard(globalStats)
+          populateCollegeFilters(globalStats)
+          populateClassSelectOptions(globalStats)
+          renderCollegeCards()
+          handleUserSearch()
+          renderExamsTable(globalStats.allExams || [])
+
+          // refresh class/college detail if selected
+          if (currentSelectedClass) {
+            renderCurrentClassDetails(currentSelectedClass)
+          }
+          if (currentSelectedCollege) {
+            renderCurrentCollegeDetails(currentSelectedCollege)
+          }
+        }
+      } catch (err) {
+        if (!isSilent) console.error('拉取大屏数据失败:', err)
+      }
+    }
+
+    // 微信云托管实时探活与状态监控
+    async function loadCloudStatus() {
+      try {
+        const res = await adminFetch('/api/admin/cloud-status')
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          const { cloud, sync } = json.data
+          const badge = document.getElementById('cloudStatusBadge')
+          const text = document.getElementById('cloudStatusText')
+          const ping = document.getElementById('cloudPingText')
+          const syncText = document.getElementById('cloudLastSyncText')
+
+          if (badge && text && ping) {
+            if (cloud.healthy) {
+              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
+              text.innerText = `探活正常 (${cloud.statusCode || 200} OK)`
+              ping.innerText = `探活延迟: ${cloud.pingMs || 0} ms`
+            } else {
+              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200'
+              text.innerText = '云端连接异常'
+              ping.innerText = `错误: ${cloud.error || '超时'}`
+            }
+          }
+
+          if (syncText && sync && sync.lastSyncAt) {
+            const diffSec = Math.max(0, Math.round((Date.now() - sync.lastSyncAt) / 1000))
+            if (diffSec < 60) {
+              syncText.innerText = `最近同步: ${diffSec}秒前`
+            } else {
+              syncText.innerText = `最近同步: ${Math.round(diffSec / 60)}分钟前`
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('获取微信云托管状态失败:', e)
+      }
+    }
+
+    // 渲染总览大屏
+    function renderDashboard(data) {
+      const ov = data.overview || {}
+      document.getElementById('statTotalUsers').innerText = (ov.totalUsers || (data.users ? data.users.length : 0)).toLocaleString()
+      document.getElementById('statProfileDone').innerText = (ov.completedProfiles || 0).toLocaleString()
+      document.getElementById('statTotalExams').innerText = (ov.totalExamsFinished || (data.allExams ? data.allExams.length : 0)).toLocaleString()
+      document.getElementById('statTotalPractices').innerText = (ov.totalPracticesStarted || 0).toLocaleString()
+      document.getElementById('statPassRate').innerText = `${ov.examPassRate || 0}%`
+      const elTotalEvents = document.getElementById('statTotalEvents')
+      if (elTotalEvents) elTotalEvents.innerText = (ov.totalEvents || 0).toLocaleString()
+      const elActiveToday = document.getElementById('statActiveToday')
+      if (elActiveToday) elActiveToday.innerText = `${(ov.activeUsersToday || 0).toLocaleString()} 人`
+      const elTodayEvents = document.getElementById('statTodayEvents')
+      if (elTodayEvents) elTodayEvents.innerText = (ov.todayEvents || 0).toLocaleString()
+
+      // 渲染盐小工校园通 · 核心运营指标 (DataCube 实时数据)
+      const wx = data.wechatOfficial
+      if (wx && wx.visitTotal) {
+        const fmtRate = (rate) => {
+          const r = Number(rate || 0)
+          return r >= 0 ? `↑ ${r}%` : `↓ ${Math.abs(r)}%`
+        }
+        const periodEl = document.getElementById('wxOfficialPeriodText')
+        if (periodEl && wx.refDate) {
+          periodEl.innerText = `数据周期：${wx.refDate} 官方核算`
+        }
+        const totalEl = document.getElementById('wxOfficialTotalUsers')
+        if (totalEl) totalEl.innerText = Number(wx.visitTotal || 0).toLocaleString()
+        const totalSubEl = document.getElementById('wxOfficialTotalUsersSub')
+        if (totalSubEl) {
+          const diff = Number(wx.visitTotalDiff || wx.visitUvNew || 0)
+          totalSubEl.innerHTML = `<span>${fmtRate(wx.visitTotalGrowthRate)} 日环比 (${diff >= 0 ? '+' + diff : diff}人)</span>`
+        }
+        const sessionEl = document.getElementById('wxOfficialSessionCnt')
+        if (sessionEl) sessionEl.innerText = Number(wx.sessionCnt || 0).toLocaleString()
+        const sessionSubEl = document.getElementById('wxOfficialSessionCntSub')
+        if (sessionSubEl) {
+          sessionSubEl.innerHTML = `<span>昨日访问 PV: ${Number(wx.visitPv || 0).toLocaleString()} 次 (${fmtRate(wx.sessionCntGrowthRate)})</span>`
+        }
+        const uvEl = document.getElementById('wxOfficialVisitUv')
+        if (uvEl) uvEl.innerText = Number(wx.visitUv || 0).toLocaleString()
+        const uvSubEl = document.getElementById('wxOfficialVisitUvSub')
+        if (uvSubEl) {
+          uvSubEl.innerHTML = `<span>人均停留 ${wx.stayTimeUv || 0} 秒 (${fmtRate(wx.visitUvGrowthRate)} 日环比)</span>`
+        }
+        const newEl = document.getElementById('wxOfficialVisitUvNew')
+        if (newEl) newEl.innerText = Number(wx.visitUvNew || 0).toLocaleString()
+        const newSubEl = document.getElementById('wxOfficialVisitUvNewSub')
+        if (newSubEl) {
+          newSubEl.innerHTML = `<span>昨日分享转发 ${wx.sharePv || 0} 次 (${wx.shareUv || 0}人)</span>`
+        }
+      }
+
+      renderDashboardCollegeRank(data)
+
+      // 热门班级渲染（支持点击直达班级查询）
+      const classList = data.classStats || data.classGroups || []
+      const rankBox = document.getElementById('classRankList')
+      if (classList.length > 0) {
+        rankBox.innerHTML = classList.slice(0, 8).map((cg, idx) => `
+          <div onclick="jumpToClassQuery('${escapeHtml(cg.className)}')" class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-slate-50 transition cursor-pointer group border-b border-slate-50 last:border-0">
+            <div class="flex items-center space-x-2">
+              <span class="w-5 h-5 rounded-full ${idx < 3 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-[10px]">${idx + 1}</span>
+              <span class="font-medium text-slate-800 group-hover:text-indigo-600">${escapeHtml(cg.className)}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-slate-500 font-semibold">${cg.studentCount || cg.userCount || 0} 位同学</span>
+              <span class="text-slate-300 group-hover:text-indigo-500">›</span>
+            </div>
+          </div>
+        `).join('')
+      } else {
+        rankBox.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">暂无班级分布数据</p>'
+      }
+
+      // 最近动态
+      const allExams = data.allExams || []
+      const actBox = document.getElementById('recentActivityList')
+      if (allExams.length > 0) {
+        actBox.innerHTML = allExams.slice(0, 5).map(e => `
+          <div class="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0">
+            <div>
+              <span class="font-semibold text-slate-900">${escapeHtml(e.realName || '未知考生')}</span>
+              <span class="text-slate-400 ml-1">(${escapeHtml(e.className || '--')})</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="font-bold ${e.isPassed ? 'text-emerald-600' : 'text-amber-600'}">${e.score}/${e.total}分</span>
+              <span class="text-[10px] text-slate-400">${formatTime(e.createdAt)}</span>
+            </div>
+          </div>
+        `).join('')
+      } else {
+        actBox.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">暂无近期答卷记录</p>'
+      }
+    }
+
+
+    let currentSelectedCollege = ''
+
+    function userCollegeOf(u) {
+      return ((u && u.college) || '').trim() || '未归属学院'
+    }
+
+    function populateCollegeFilters(data) {
+      const stats = (data && data.collegeStats) || []
+      const opts = ['<option value="all">全部学院</option>']
+        .concat(stats.map(c => `<option value="${escapeHtml(c.college)}">${escapeHtml(c.college)} (${c.studentCount}人)</option>`))
+      const html = opts.join('')
+      ;['userCollegeFilterSelect', 'classCollegeFilterSelect'].forEach(id => {
+        const el = document.getElementById(id)
+        if (!el) return
+        const cur = el.value || 'all'
+        el.innerHTML = html
+        el.value = cur
+        if (!el.value) el.value = 'all'
+      })
+      const collegeSelect = document.getElementById('collegeSelectDropdown')
+      if (collegeSelect) {
+        const cur = collegeSelect.value || ''
+        let o = '<option value="">-- 浏览全部学院卡片，或在此选择 --</option>'
+        stats.forEach(c => {
+          o += `<option value="${escapeHtml(c.college)}">${escapeHtml(c.college)} (${c.studentCount}人 · ${c.classCount || 0}班)</option>`
+        })
+        collegeSelect.innerHTML = o
+        if (cur) collegeSelect.value = cur
+      }
+      const badge = document.getElementById('collegeCountBadge')
+      if (badge) badge.innerText = String(stats.length)
+    }
+
+    function renderDashboardCollegeRank(data) {
+      const box = document.getElementById('dashboardCollegeRank')
+      if (!box) return
+      const list = (data.collegeStats || []).filter(c => c.college !== '未归属学院').slice(0, 9)
+      if (!list.length) {
+        box.innerHTML = '<p class="text-slate-400 py-4 text-center col-span-full">暂无学院分布（完善班级后将自动归属）</p>'
+        return
+      }
+      box.innerHTML = list.map((c, idx) => `
+        <div onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')" class="college-card flex items-center justify-between py-2 px-3 rounded-xl border border-slate-100 bg-slate-50/80 hover:border-indigo-200">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-5 h-5 rounded-full ${idx < 3 ? 'bg-violet-100 text-violet-700 font-bold' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-[10px]">${idx + 1}</span>
+            <span class="font-medium text-slate-800 truncate">${escapeHtml(c.college)}</span>
+          </div>
+          <span class="text-slate-500 font-semibold whitespace-nowrap ml-2">${c.studentCount}人</span>
+        </div>
+      `).join('')
+    }
+
+    function renderCollegeCards() {
+      if (!globalStats) return
+      const q = ((document.getElementById('collegeSearchInput') || {}).value || '').trim().toLowerCase()
+      let list = globalStats.collegeStats || []
+      if (q) list = list.filter(c => (c.college || '').toLowerCase().includes(q))
+      const grid = document.getElementById('collegeCardsGrid')
+      if (!grid) return
+      if (!list.length) {
+        grid.innerHTML = '<div class="col-span-full text-center text-slate-400 text-xs py-10">没有匹配的学院</div>'
+        return
+      }
+      grid.innerHTML = list.map(c => {
+        const short = (c.college || '').length > 18 ? (c.college.slice(0, 18) + '…') : c.college
+        return `
+        <div class="college-card bg-white rounded-2xl border border-slate-200 p-4 shadow-sm" onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="text-sm font-bold text-slate-900 leading-snug" title="${escapeHtml(c.college)}">${escapeHtml(short)}</div>
+              <div class="text-[11px] text-slate-400 mt-1">${c.classCount || 0} 个班级</div>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100 font-semibold">学院</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+            <div class="bg-slate-50 rounded-lg py-2"><div class="text-[10px] text-slate-400">学生</div><div class="font-bold text-slate-800">${c.studentCount}</div></div>
+            <div class="bg-slate-50 rounded-lg py-2"><div class="text-[10px] text-slate-400">完善率</div><div class="font-bold text-emerald-600">${c.completedRate || 0}%</div></div>
+            <div class="bg-slate-50 rounded-lg py-2"><div class="text-[10px] text-slate-400">均分</div><div class="font-bold text-indigo-600">${c.avgScore || 0}</div></div>
+          </div>
+        </div>`
+      }).join('')
+    }
+
+    function jumpToCollegeQuery(college) {
+      switchTab('colleges')
+      const sel = document.getElementById('collegeSelectDropdown')
+      if (sel) sel.value = college
+      currentSelectedCollege = college
+      renderCurrentCollegeDetails(college)
+    }
+
+    function onSelectCollegeChange() {
+      const sel = document.getElementById('collegeSelectDropdown')
+      const college = (sel && sel.value) || ''
+      currentSelectedCollege = college
+      if (college) renderCurrentCollegeDetails(college)
+      else {
+        document.getElementById('collegeOverviewCard').classList.add('hidden')
+        document.getElementById('collegeStudentsPanel').classList.add('hidden')
+        document.getElementById('collegeExportBtn').classList.add('hidden')
+      }
+    }
+
+    function renderCurrentCollegeDetails(college) {
+      if (!college || !globalStats) return
+      const cStat = ((globalStats.collegeStats || []).find(c => c.college === college)) || {}
+      const users = (globalStats.users || []).filter(u => userCollegeOf(u) === college)
+      document.getElementById('collegeOverviewCard').classList.remove('hidden')
+      document.getElementById('collegeStudentsPanel').classList.remove('hidden')
+      document.getElementById('collegeExportBtn').classList.remove('hidden')
+      document.getElementById('activeCollegeName').innerText = college
+      document.getElementById('activeCollegeTotal').innerText = users.length
+      document.getElementById('activeCollegeClasses').innerText = cStat.classCount || 0
+      document.getElementById('activeCollegeCompleted').innerText = users.filter(u => u.isProfileCompleted).length
+      document.getElementById('activeCollegeRate').innerText = `${cStat.completedRate || 0}%`
+      document.getElementById('activeCollegeAvgScore').innerText = `${cStat.avgScore || 0}`
+      document.getElementById('activeCollegeMaxScore').innerText = `${cStat.maxScore || 0}`
+      document.getElementById('collegeTableCountText').innerText = `本院共 ${users.length} 人`
+      const search = document.getElementById('collegeStudentSearchInput')
+      if (search) search.value = ''
+      renderCollegeStudentsTable(users)
+    }
+
+    function renderCollegeStudentsTable(students) {
+      const tbody = document.getElementById('collegeStudentsTableBody')
+      if (!tbody) return
+      if (!students || !students.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-slate-400">本院暂无匹配学生</td></tr>'
+        return
+      }
+      tbody.innerHTML = students.map((u, idx) => `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(u.realName || u.nickname || '未登记')}</td>
+          <td class="py-3 px-4"><span onclick="jumpToClassQuery('${escapeHtml(u.className || '')}')" class="text-indigo-600 hover:underline cursor-pointer">${escapeHtml(u.className || '--')}</span></td>
+          <td class="py-3 px-4 font-mono">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
+          <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(u.studentId || '--')}</td>
+          <td class="py-3 px-4">${u.examCount || 0}</td>
+          <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0}</td>
+          <td class="py-3 px-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">${u.isProfileCompleted ? '已完善' : '待完善'}</span></td>
+          <td class="py-3 px-4 text-right"><button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">详情</button></td>
+        </tr>
+      `).join('')
+    }
+
+    function filterCurrentCollegeStudents() {
+      if (!currentSelectedCollege || !globalStats) return
+      const keyword = ((document.getElementById('collegeStudentSearchInput') || {}).value || '').trim().toLowerCase()
+      let users = (globalStats.users || []).filter(u => userCollegeOf(u) === currentSelectedCollege)
+      if (keyword) {
+        users = users.filter(u =>
+          (u.realName && u.realName.toLowerCase().includes(keyword)) ||
+          (u.className && u.className.toLowerCase().includes(keyword)) ||
+          (u.phone && String(u.phone).includes(keyword)) ||
+          (u.studentId && String(u.studentId).includes(keyword))
+        )
+      }
+      renderCollegeStudentsTable(users)
+    }
+
+    function exportCurrentCollegeCsv() {
+      if (!currentSelectedCollege) return
+      const url = `/api/admin/export/users.csv?college=${encodeURIComponent(currentSelectedCollege)}&token=${encodeURIComponent(getAdminToken())}`
+      window.open(url, '_blank')
+    }
+
+    function onClassCollegeFilterChange() {
+      populateClassSelectOptions(globalStats || {})
+      const sel = document.getElementById('classSelectDropdown')
+      if (sel) { sel.value = ''; onSelectClassChange() }
+    }
+
+    // 填充班级下拉选项
+    function populateClassSelectOptions(data) {
+      const select = document.getElementById('classSelectDropdown')
+      if (!select) return
+      const currentVal = select.value
+      let classList = (data && data.classStats) || []
+      const collegeFilterEl = document.getElementById('classCollegeFilterSelect')
+      const collegeFilter = collegeFilterEl ? collegeFilterEl.value : 'all'
+      if (collegeFilter && collegeFilter !== 'all' && data && data.users) {
+        const allowed = new Set(
+          (data.users || [])
+            .filter(u => userCollegeOf(u) === collegeFilter)
+            .map(u => (u.className || '').trim())
+            .filter(Boolean)
+        )
+        classList = classList.filter(c => allowed.has((c.className || '').trim()))
+      }
+      let optionsHtml = '<option value="">-- 请选择需要查询的班级 (共 ' + classList.length + ' 个班级) --</option>'
+      classList.forEach(c => {
+        optionsHtml += `<option value="${escapeHtml(c.className)}">${escapeHtml(c.className)} (${c.studentCount}人 · 档案完善率 ${c.completedRate || 0}%)</option>`
+      })
+      select.innerHTML = optionsHtml
+      if (currentVal) select.value = currentVal
+    }
+
+    // 点击大屏的班级直接跳转并选中该班
+    function jumpToClassQuery(className) {
+      switchTab('classes')
+      const select = document.getElementById('classSelectDropdown')
+      select.value = className
+      onSelectClassChange()
+    }
+
+    // 下拉选择班级触发
+    function onSelectClassChange() {
+      const select = document.getElementById('classSelectDropdown')
+      const selectedClass = select.value
+      currentSelectedClass = selectedClass
+      document.getElementById('classStudentSearchInput').value = ''
+      renderCurrentClassDetails(selectedClass)
+    }
+
+    // 渲染指定班级的详细卡片与学生名单
+    function renderCurrentClassDetails(className) {
+      const overviewCard = document.getElementById('classOverviewCard')
+      const exportBtnWrapper = document.getElementById('classExportBtnWrapper')
+      const tbody = document.getElementById('classStudentsTableBody')
+      const countText = document.getElementById('classTableCountText')
+
+      if (!className) {
+        overviewCard.classList.add('hidden')
+        exportBtnWrapper.classList.add('hidden')
+        countText.innerText = '请先在上方选择班级'
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" class="py-12 text-center text-slate-400">
+              <div class="text-2xl mb-1">🔍</div>
+              <div>请在上方下拉菜单中选择一个班级以查看其全体同学信息</div>
+            </td>
+          </tr>
+        `
+        return
+      }
+
+      overviewCard.classList.remove('hidden')
+      exportBtnWrapper.classList.remove('hidden')
+
+      // 获取该班统计
+      const classStats = (globalStats && globalStats.classStats) || []
+      const cStat = classStats.find(c => c.className === className) || {}
+
+      // 获取该班所有学生
+      const allUsers = (globalStats && globalStats.users) || []
+      const classUsers = allUsers.filter(u => (u.className || '').trim() === className.trim())
+
+      // 班级卡片赋值
+      document.getElementById('activeClassName').innerText = className
+      document.getElementById('activeClassTotal').innerText = classUsers.length
+      const completedCount = classUsers.filter(u => u.isProfileCompleted).length
+      document.getElementById('activeClassCompleted').innerText = completedCount
+      const rate = classUsers.length > 0 ? Math.round((completedCount / classUsers.length) * 100) : 0
+      document.getElementById('activeClassRate').innerText = `${rate}%`
+      document.getElementById('activeClassAvgScore').innerText = `${cStat.avgScore || 0} 分`
+      document.getElementById('activeClassMaxScore').innerText = `${cStat.maxScore || 0} 分`
+
+      // 渲染表格
+      countText.innerText = `当前班级共 ${classUsers.length} 位同学`
+      renderClassStudentsTable(classUsers)
+    }
+
+    // 渲染该班级成员表格
+    function renderClassStudentsTable(students) {
+      const tbody = document.getElementById('classStudentsTableBody')
+      if (!students || students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-slate-400">该班暂无匹配学生</td></tr>'
+        return
+      }
+
+      tbody.innerHTML = students.map((u, idx) => `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900">
+            <div class="flex items-center space-x-2">
+              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
+                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
+              </div>
+              <span>${escapeHtml(u.realName || u.nickname || '未登记姓名')}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 font-mono font-semibold text-slate-700">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
+          <td class="py-3 px-4 font-mono text-slate-600">${escapeHtml(u.studentId || '--')}</td>
+          <td class="py-3 px-4 font-semibold">${u.examCount || 0} 次</td>
+          <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0} 分</td>
+          <td class="py-3 px-4">${u.avgAccuracy ? u.avgAccuracy + '%' : '--'}</td>
+          <td class="py-3 px-4">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">
+              ${u.isProfileCompleted ? '已完善' : '待完善'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right">
+            <button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">查看档案</button>
+          </td>
+        </tr>
+      `).join('')
+    }
+
+    // 在当前班级内二次打字搜索
+    function filterCurrentClassStudents() {
+      if (!currentSelectedClass || !globalStats || !globalStats.users) return
+      const keyword = (document.getElementById('classStudentSearchInput').value || '').trim().toLowerCase()
+      const classUsers = globalStats.users.filter(u => (u.className || '').trim() === currentSelectedClass.trim())
+
+      if (!keyword) {
+        renderClassStudentsTable(classUsers)
+        return
+      }
+
+      const filtered = classUsers.filter(u => 
+        (u.realName && u.realName.toLowerCase().includes(keyword)) ||
+        (u.phone && u.phone.includes(keyword)) ||
+        (u.studentId && u.studentId.includes(keyword))
+      )
+      renderClassStudentsTable(filtered)
+    }
+
+    // 一键导出当前选中班级学生名单 CSV
+    function exportCurrentClassCsv() {
+      if (!currentSelectedClass) return
+      const url = `/api/admin/export/users.csv?className=${encodeURIComponent(currentSelectedClass)}&token=${encodeURIComponent(getAdminToken())}`
+      window.open(url, '_blank')
+    }
+
+    // 渲染全校考生名册表格
+    function renderUsersTable(users) {
+      const tbody = document.getElementById('usersTableBody')
+      if (!users || users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-slate-400">名册暂无匹配考生</td></tr>'
+        return
+      }
+
+      tbody.innerHTML = users.map(u => `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="py-3 px-4 font-semibold text-slate-900">
+            <div class="flex items-center space-x-2">
+              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
+                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
+              </div>
+              <span>${escapeHtml(u.realName || u.nickname || '未登记')}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4">
+            <span onclick="jumpToCollegeQuery('${escapeHtml(userCollegeOf(u))}')" class="text-violet-700 hover:underline cursor-pointer font-medium" title="${escapeHtml(userCollegeOf(u))}">${escapeHtml((userCollegeOf(u).length > 10 ? userCollegeOf(u).slice(0,10)+'\u2026' : userCollegeOf(u)))}</span>
+          </td>
+          <td class="py-3 px-4">
+            <span onclick="jumpToClassQuery('${escapeHtml(u.className || '')}')" class="text-indigo-600 hover:underline cursor-pointer font-medium">${escapeHtml(u.className || '--')}</span>
+          </td>
+          <td class="py-3 px-4 font-mono text-slate-600">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
+          <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(u.studentId || '--')}</td>
+          <td class="py-3 px-4 font-semibold">${u.examCount || 0} 次</td>
+          <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0}</td>
+          <td class="py-3 px-4">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">
+              ${u.isProfileCompleted ? '已完善' : '未完善'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(u.lastLoginAt || u.createdAt)}</td>
+          <td class="py-3 px-4 text-right">
+            <button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">详情</button>
+          </td>
+        </tr>
+      `).join('')
+    }
+
+    // 搜索全校考生
+    function handleUserSearch() {
+      if (!globalStats || !globalStats.users) return
+      const keyword = (document.getElementById('userSearchInput').value || '').trim().toLowerCase()
+      const filter = document.getElementById('userFilterSelect').value
+      const collegeEl = document.getElementById('userCollegeFilterSelect')
+      const collegeFilter = collegeEl ? collegeEl.value : 'all'
+      let filtered = globalStats.users
+      if (filter === 'completed') filtered = filtered.filter(u => u.isProfileCompleted)
+      if (filter === 'pending') filtered = filtered.filter(u => !u.isProfileCompleted)
+      if (collegeFilter && collegeFilter !== 'all') {
+        filtered = filtered.filter(u => userCollegeOf(u) === collegeFilter)
+      }
+      if (keyword) {
+        filtered = filtered.filter(u =>
+          (u.realName && u.realName.toLowerCase().includes(keyword)) ||
+          (u.className && u.className.toLowerCase().includes(keyword)) ||
+          (u.college && u.college.toLowerCase().includes(keyword)) ||
+          (u.phone && String(u.phone).includes(keyword)) ||
+          (u.studentId && String(u.studentId).includes(keyword))
+        )
+      }
+      renderUsersTable(filtered)
+    }
+
+    // 渲染考试记录
+    function renderExamsTable(exams) {
+      const tbody = document.getElementById('examsTableBody')
+      if (!exams || exams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">暂无模考记录</td></tr>'
+        return
+      }
+
+      tbody.innerHTML = exams.map(e => `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="py-3 px-4 text-slate-500">${formatTime(e.createdAt)}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(e.realName || '--')}</td>
+          <td class="py-3 px-4 text-slate-600">${escapeHtml(e.className || '--')}</td>
+          <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(e.phone || '--')}</td>
+          <td class="py-3 px-4">${escapeHtml(e.bankTitle || '默认题库')}</td>
+          <td class="py-3 px-4 font-bold text-slate-900">${e.score ?? 0} / ${e.total ?? 100}</td>
+          <td class="py-3 px-4 font-semibold ${e.accuracy >= 60 ? 'text-emerald-600' : 'text-rose-600'}">${e.accuracy ?? 0}%</td>
+          <td class="py-3 px-4">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${e.isPassed ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}">
+              ${e.isPassed ? '及格' : '不及格'}
+            </span>
+          </td>
+        </tr>
+      `).join('')
+    }
+
+    // 公告数据加载与实时预览
+    async function loadAnnouncementData() {
+      try {
+        const res = await adminFetch('/api/announcement/admin?token=' + encodeURIComponent(getAdminToken()))
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          const cfg = json.data.config || json.data
+          document.getElementById('annEnabled').checked = Boolean(cfg.enabled)
+          document.getElementById('annTitle').value = cfg.title || ''
+          document.getElementById('annText').value = cfg.text || ''
+          document.getElementById('annContact').value = cfg.contactValue || ''
+          document.getElementById('annShowMode').value = cfg.showMode || 'always'
+          document.getElementById('annImage').value = cfg.image || ''
+          updateAnnouncementPreview()
+        }
+      } catch (err) {
+        console.warn('拉取公告失败:', err)
+      }
+    }
+
+    function updateAnnouncementPreview() {
+      const enabled = document.getElementById('annEnabled').checked
+      const title = document.getElementById('annTitle').value || '最新公告'
+      const text = document.getElementById('annText').value || '暂无内容'
+      const contact = document.getElementById('annContact').value || 'Corwin07'
+      const img = document.getElementById('annImage').value || ''
+
+      document.getElementById('prevTitle').innerText = title
+      document.getElementById('prevText').innerText = text
+      document.getElementById('prevContact').innerText = contact.split('/')[0] || contact
+      const imgEl = document.getElementById('prevImg')
+      if (img) {
+        imgEl.src = img
+        imgEl.parentElement.style.display = 'flex'
+      } else {
+        imgEl.parentElement.style.display = 'none'
+      }
+      document.getElementById('previewCard').style.opacity = enabled ? '1' : '0.4'
+    }
+
+    async function saveAnnouncementConfig() {
+      const btn = document.getElementById('btnSaveAnn')
+      btn.disabled = true
+      btn.innerText = '正在保存并广播...'
+      try {
+        const payload = {
+          enabled: document.getElementById('annEnabled').checked,
+          title: document.getElementById('annTitle').value,
+          text: document.getElementById('annText').value,
+          contactValue: document.getElementById('annContact').value,
+          showMode: document.getElementById('annShowMode').value,
+          image: document.getElementById('annImage').value,
+        }
+        const res = await adminFetch('/api/announcement/admin?token=' + encodeURIComponent(getAdminToken()), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          showToast('公告已保存并实时同步给全体小程序用户！', 'success')
+        } else {
+          showToast(json.message || '保存失败', 'error')
+        }
+      } catch (e) {
+        showToast('保存异常: ' + e.message, 'error')
+      } finally {
+        btn.disabled = false
+        btn.innerText = '保存并实时同步给全体小程序用户'
+      }
+    }
+
+    // 激活码管理
+    async function loadCodesData() {
+      try {
+        const res = await adminFetch('/api/admin/activation-codes')
+        const json = await res.json()
+        if (json.code === 0 && json.data) {
+          const list = json.data.allList || []
+          const tbody = document.getElementById('codesTableBody')
+          if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">暂无激活码</td></tr>'
+            return
+          }
+          tbody.innerHTML = list.map(c => `
+            <tr class="hover:bg-slate-50 transition">
+              <td class="py-3 px-4 font-mono font-bold text-slate-900">${escapeHtml(c.code)}</td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${c.isUsed ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+                  ${c.isUsed ? '已使用' : '未使用'}
+                </span>
+              </td>
+              <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(c.usedByUserRealName || '--')}</td>
+              <td class="py-3 px-4 text-slate-600">${escapeHtml(c.usedByUserClass || '--')}</td>
+              <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(c.usedByUserPhone || '--')}</td>
+              <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(c.usedAt)}</td>
+              <td class="py-3 px-4 text-right">
+                ${!c.isUsed ? `<button onclick="deleteCode('${c.code}')" class="text-rose-600 hover:text-rose-800 font-medium">删除</button>` : '--'}
+              </td>
+            </tr>
+          `).join('')
+        }
+      } catch (err) {
+        console.warn('拉取激活码失败:', err)
+      }
+    }
+
+    async function batchGenerateCodesPrompt() {
+      const countStr = prompt('请输入需要批量生成的激活码数量 (如: 10):', '10')
+      if (!countStr) return
+      const count = parseInt(countStr, 10)
+      if (isNaN(count) || count <= 0) return alert('请输入有效数字')
+      
+      const prefix = prompt('请输入激活码前缀 (默认 VIP):', 'VIP') || 'VIP'
+      try {
+        const res = await adminFetch('/api/admin/activation-codes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count, prefix })
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          showToast(`已成功批量生成 ${count} 个激活码！`, 'success')
+          loadCodesData()
+        }
+      } catch (e) {
+        showToast('生成异常: ' + e.message, 'error')
+      }
+    }
+
+    async function deleteCode(code) {
+      if (!confirm(`确定要删除激活码 ${code} 吗？`)) return
+      try {
+        const res = await adminFetch(`/api/admin/activation-codes/${encodeURIComponent(code)}`, { method: 'DELETE' })
+        const json = await res.json()
+        if (json.code === 0) {
+          showToast('激活码已删除', 'success')
+          loadCodesData()
+        } else {
+          showToast(json.message || '删除失败', 'error')
+        }
+      } catch (e) {
+        showToast('删除失败: ' + e.message, 'error')
+      }
+    }
+
+    // 上课提醒与电费预警配置数据
+    async function loadReminderData() {
+      try {
+        const res = await adminFetch('/api/reminder/admin')
+        const json = await res.json()
+        if (json.code === 0 && json.data && json.data.config) {
+          const cfg = json.data.config
+          const tplEl = document.getElementById('remindTemplateId')
+          const elecEl = document.getElementById('electricityTemplateId')
+          const finEl = document.getElementById('financeJsessionId')
+          const aheadEl = document.getElementById('remindAheadMinutes')
+          if (tplEl && cfg.templateId) tplEl.value = cfg.templateId
+          if (elecEl && cfg.electricityTemplateId) elecEl.value = cfg.electricityTemplateId
+          if (finEl && cfg.financeJsessionId) finEl.value = cfg.financeJsessionId
+          if (aheadEl && cfg.defaultAheadMinutes) aheadEl.value = cfg.defaultAheadMinutes
+        }
+      } catch (e) {
+        console.warn('读取提醒配置失败:', e)
+      }
+    }
+    async function saveReminderConfig() {
+      try {
+        const templateId = (document.getElementById('remindTemplateId')?.value || '').trim()
+        const electricityTemplateId = (document.getElementById('electricityTemplateId')?.value || '').trim()
+        const financeJsessionId = (document.getElementById('financeJsessionId')?.value || '').trim()
+        const defaultAheadMinutes = parseInt(document.getElementById('remindAheadMinutes')?.value || '20', 10) || 20
+        const res = await adminFetch('/api/reminder/admin', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ templateId, electricityTemplateId, financeJsessionId, defaultAheadMinutes })
+        })
+        const json = await res.json()
+        if (json.code === 0) {
+          showToast('提醒与低电费预警配置已保存！', 'success')
+        } else {
+          showToast(json.message || '保存失败', 'error')
+        }
+      } catch (e) {
+        showToast('保存异常: ' + e.message, 'error')
+      }
+    }
+
+    // 手动一键拉取线上真实考生数据
+    async function syncFromCloudBaseAction() {
+      const btn = document.getElementById('btnSyncCloud')
+      btn.disabled = true
+      btn.innerText = '正在同步中...'
+      showToast('正在从云端拉取 500+ 真实考生档案与成绩...', 'info')
+      try {
+        const res = await adminFetch('/api/admin/sync-cloud', { method: 'POST' })
+        const json = await res.json()
+        if (json.code === 0) {
+          showToast(json.message, 'success')
+          loadAllData()
+        } else {
+          showToast(json.message || '同步失败', 'error')
+        }
+      } catch (e) {
+        showToast('网络同步异常: ' + e.message, 'error')
+      } finally {
+        btn.disabled = false
+        btn.innerHTML = `<svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>一键拉取最新线上数据`
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return ''
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    }
+
+    function formatTime(ts) {
+      if (!ts) return '--'
+      const d = new Date(ts)
+      return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+    }
+
+    function showToast(msg, type = 'success') {
+      const el = document.getElementById('toast')
+      document.getElementById('toastMsg').innerText = msg
+      document.getElementById('toastIcon').innerText = type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ')
+      el.classList.remove('translate-y-20', 'opacity-0')
+      setTimeout(() => {
+        el.classList.add('translate-y-20', 'opacity-0')
+      }, 3000)
+    }
+
+    function showUserDetailModal(userId) {
+      if (!globalStats || !globalStats.users) return
+      const user = globalStats.users.find(u => u.id === userId)
+      if (!user) return
+      alert(`【考生详情档案】\n真实姓名: ${user.realName || '--'}\n所在班级: ${user.className || '--'}\n电话号码: ${user.phone || '--'}\n学号: ${user.studentId || '--'}\n累计登录: ${user.loginCount || 1} 次\n已考次数: ${user.examCount || 0} 次\n最高得分: ${user.maxScore || 0} 分`)
+    }
+  

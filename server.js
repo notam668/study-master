@@ -11,6 +11,9 @@ const scheduleRouter = require('./routes/schedule')
 const announcementRouter = require('./routes/announcement')
 const reminderRouter = require('./routes/reminder')
 const electricityRouter = require('./routes/electricity')
+// 2026-10-26 开发部：教务课表（P1 演示接口 /api/jwxt/timetable-demo）
+const jwxtRouter = require('./routes/jwxt')
+const practiceRouter = require('./routes/practice')
 const { securityMiddleware } = require('./middleware/security')
 const scheduleService = require('./services/scheduleService')
 const reminderService = require('./services/reminderService')
@@ -50,6 +53,8 @@ app.use('/api/schedule', scheduleRouter)
 app.use('/api/announcement', announcementRouter)
 app.use('/api/reminder', reminderRouter)
 app.use('/api/electricity', electricityRouter)
+app.use('/api/jwxt', jwxtRouter)
+app.use('/api/practice', practiceRouter)
 
 // 根路由与健康检查（供云托管探活）
 app.get('/health', (req, res) => {
@@ -92,7 +97,16 @@ module.exports = app
 // 如果直接由 node 运行，则监听本地端口
 if (require.main === module) {
   const PORT = config.port
-  app.listen(PORT, () => {
+  db.initStore()
+    .then(store => {
+      if (store && store.enabled) {
+        console.log(`🗄️ 存储: MySQL ${process.env.MYSQL_HOST}/${process.env.MYSQL_DATABASE || 'studymaster'}（${store.source}，用户 ${store.users ?? '-'}）`)
+      } else {
+        console.log(`🗄️ 存储: 本地文件 data/studymaster.json${store && store.reason ? '（' + store.reason + '）' : ''}`)
+      }
+    })
+    .catch(e => console.warn('[MySQL] 启动初始化异常，按文件模式运行:', e.message))
+    .finally(() => app.listen(PORT, () => {
     console.log('====================================================')
     console.log(`🚀 StudyMaster 统一后端服务已成功启动！`)
     console.log(`📡 API 服务地址: http://localhost:${PORT}`)
@@ -106,14 +120,21 @@ if (require.main === module) {
       console.warn('[Schedule] 初始化课表缓存提示:', err.message)
     })
 
-    // 启动后台全自动实时轮询同步（每 30 秒自动从线上同步真实考生与成绩流水）
+    // 启动后台全自动实时轮询同步（间隔可由 CLOUD_SYNC_INTERVAL_SECONDS 调，默认 30 秒）
     const { startAutoSync } = require('./services/cloudSyncService')
-    startAutoSync(30)
+    startAutoSync(Number(process.env.CLOUD_SYNC_INTERVAL_SECONDS) || 30)
 
     // 启动上课提醒定时扫描
     if (!config.isVercel) {
       reminderService.startScheduler()
     }
-  })
+
+    // 启动电费会话保活（每 10 分钟打一次，防止学校 Session 过期）
+    try {
+      require('./services/electricityService').startSessionKeepalive()
+    } catch (e) {
+      console.warn('[Electricity] 会话保活启动失败:', e.message)
+    }
+    }))
 }
 

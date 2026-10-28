@@ -1,5 +1,7 @@
 const path = require('path')
 require('dotenv').config({ path: path.join(__dirname, '.env') })
+// 本地密钥（数据库密码等）放在被 git 忽略的 .env.local，优先级更高；线上由容器环境变量提供
+require('dotenv').config({ path: path.join(__dirname, '.env.local'), override: true })
 
 const isVercel = Boolean(process.env.VERCEL || process.env.NOW_REGION)
 const defaultDataDir = isVercel ? path.join('/tmp', 'studymaster-data') : path.join(__dirname, 'data')
