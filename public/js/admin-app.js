@@ -324,11 +324,24 @@
       }
     }
 
+    function completedRateForClass(className, users) {
+      const name = String(className || '').trim()
+      const list = (users || []).filter(u => (u.className || '').trim() === name)
+      if (!list.length) return null
+      const done = list.filter(u => u.isProfileCompleted).length
+      return Math.round((done / list.length) * 100)
+    }
+
     function normalizeDashboardData(data) {
       data.users = Array.isArray(data.users) ? data.users : []
       data.allExams = Array.isArray(data.allExams) ? data.allExams : []
       data.collegeStats = Array.isArray(data.collegeStats) ? data.collegeStats : []
       data.classStats = Array.isArray(data.classStats) ? data.classStats : []
+      data.classStats = data.classStats.map((c) => {
+        const rate = completedRateForClass(c.className, data.users)
+        if (rate == null) return c
+        return Object.assign({}, c, { completedRate: rate })
+      })
       return data
     }
 
@@ -921,7 +934,9 @@
       }
       let optionsHtml = '<option value="">-- 请选择需要查询的班级 (共 ' + classList.length + ' 个班级) --</option>'
       classList.forEach(c => {
-        optionsHtml += `<option value="${escapeHtml(c.className)}">${escapeHtml(c.className)} (${c.studentCount}人 · 档案完善率 ${c.completedRate || 0}%)</option>`
+        const rate = completedRateForClass(c.className, (data && data.users) || [])
+        const shown = rate == null ? (c.completedRate || 0) : rate
+        optionsHtml += `<option value="${escapeHtml(c.className)}">${escapeHtml(c.className)} (${c.studentCount}人 · 档案完善率 ${shown}%)</option>`
       })
       select.innerHTML = optionsHtml
       if (currentVal) select.value = currentVal
@@ -997,11 +1012,9 @@
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
           <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">
-            <div class="flex items-center space-x-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
-              </div>
-              <span>${escapeHtml(u.realName || u.nickname || '未登记姓名')}</span>
+            <div class="yx-id-row">
+              <span class="yx-id-mark">${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}</span>
+              <span class="yx-id-name">${escapeHtml(u.realName || u.nickname || '未登记姓名')}</span>
             </div>
           </td>
           <td class="py-3 px-4 font-mono font-semibold text-slate-700">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
@@ -1062,11 +1075,9 @@
       tbody.innerHTML = users.map(u => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">
-            <div class="flex items-center space-x-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
-              </div>
-              <span>${escapeHtml(u.realName || u.nickname || '未登记')}</span>
+            <div class="yx-id-row">
+              <span class="yx-id-mark">${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}</span>
+              <span class="yx-id-name">${escapeHtml(u.realName || u.nickname || '未登记')}</span>
             </div>
           </td>
           <td class="py-3 px-4">

@@ -834,7 +834,33 @@ header.navbar.yx-topbar .container-xl {
   z-index: 5;
   background-color: #F1F5F9 !important;
 }
-.yx-dense tbody tr:hover td:first-child,
+.yx-dense td.yx-sticky-id {
+  vertical-align: middle;
+}
+.yx-dense td.yx-sticky-id > .yx-id-row,
+.yx-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.yx-id-mark {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #EEF2FF;
+  color: #3730A3;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.yx-id-name {
+  line-height: 1.25;
+}
 .yx-dense tbody tr:hover td:nth-child(2),
 .yx-dense tbody tr:hover td:last-child { background: #F8FAFC; }
 .yx-dense .yx-row-btn,
@@ -1179,6 +1205,20 @@ a:hover { color: #4338CA; }
   #tab-users .table-responsive {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 390px) {
+  #tab-classes .yx-dense { min-width: 0; }
+  #tab-classes .yx-dense th:nth-child(1),
+  #tab-classes .yx-dense td:nth-child(1),
+  #tab-classes .yx-dense th:nth-child(n+3):nth-child(-n+7),
+  #tab-classes .yx-dense td:nth-child(n+3):nth-child(-n+7) {
+    display: none;
+  }
+  #tab-classes .yx-dense td[colspan],
+  #tab-users .yx-dense td[colspan] {
+    display: table-cell !important;
   }
 }
 
