@@ -10,15 +10,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.12.0/dist/tabler-icons.min.css" />
-  <link rel="stylesheet" href="/css/admin.css" />
+  <link rel="stylesheet" href="/css/admin.css?v=mobile429" />
 </head>
 <body class="layout-fluid theme-dark" data-bs-theme="dark">
   <div class="page">
     <div id="yxSidebarBackdrop" class="yx-sidebar-backdrop" onclick="closeAdminDrawer()" aria-hidden="true"></div>
     <!-- Sidebar -->
-    <aside id="yxSidebar" class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark" aria-label="主导航">
-      <div class="container-fluid">
-        <h1 class="navbar-brand navbar-brand-autodark">
+    <aside id="yxSidebar" class="navbar navbar-vertical navbar-expand-lg yx-sidebar" data-bs-theme="dark" aria-label="主导航">
+      <div class="container-fluid yx-sidebar-inner">
+        <h1 class="navbar-brand navbar-brand-autodark yx-sidebar-brand">
           <span class="d-flex align-items-center gap-2">
             <span class="avatar avatar-sm">盐</span>
             <span>
@@ -27,68 +27,68 @@
             </span>
           </span>
         </h1>
-        <div class="collapse navbar-collapse show" id="sidebar-menu">
-          <ul class="navbar-nav">
+        <div class="collapse navbar-collapse show yx-sidebar-scroll" id="sidebar-menu">
+          <ul class="navbar-nav yx-side-nav">
             <li class="nav-item">
-              <a class="nav-link nav-item active" href="#dashboard" id="nav-dashboard" onclick="switchTab('dashboard');return false;">
+              <a class="nav-link active" href="#dashboard" id="nav-dashboard" onclick="switchTab('dashboard');return false;">
                 <span class="nav-link-icon"><i class="ti ti-layout-dashboard"></i></span>
                 <span class="nav-link-title">仪表盘</span>
               </a>
             </li>
-            <li><span class="nav-section-label">学生档案</span></li>
+            <li class="yx-nav-section"><span class="nav-section-label">学生档案</span></li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#colleges" id="nav-colleges" onclick="switchTab('colleges');return false;">
+              <a class="nav-link" href="#colleges" id="nav-colleges" onclick="switchTab('colleges');return false;">
                 <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
                 <span class="nav-link-title">按学院划分</span>
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#classes" id="nav-classes" onclick="switchTab('classes');return false;">
+              <a class="nav-link" href="#classes" id="nav-classes" onclick="switchTab('classes');return false;">
                 <span class="nav-link-icon"><i class="ti ti-users-group"></i></span>
                 <span class="nav-link-title">班级名册</span>
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#users" id="nav-users" onclick="switchTab('users');return false;">
+              <a class="nav-link" href="#users" id="nav-users" onclick="switchTab('users');return false;">
                 <span class="nav-link-icon"><i class="ti ti-user-search"></i></span>
                 <span class="nav-link-title">考生全库</span>
               </a>
             </li>
-            <li><span class="nav-section-label">学情数据</span></li>
+            <li class="yx-nav-section"><span class="nav-section-label">学情数据</span></li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#exams" id="nav-exams" onclick="switchTab('exams');return false;">
+              <a class="nav-link" href="#exams" id="nav-exams" onclick="switchTab('exams');return false;">
                 <span class="nav-link-icon"><i class="ti ti-clipboard-list"></i></span>
                 <span class="nav-link-title">模考流水</span>
               </a>
             </li>
-            <li><span class="nav-section-label">运营工具</span></li>
+            <li class="yx-nav-section"><span class="nav-section-label">运营工具</span></li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#announcement" id="nav-announcement" onclick="switchTab('announcement');return false;">
+              <a class="nav-link" href="#announcement" id="nav-announcement" onclick="switchTab('announcement');return false;">
                 <span class="nav-link-icon"><i class="ti ti-speakerphone"></i></span>
                 <span class="nav-link-title">开屏公告</span>
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#reminder" id="nav-reminder" onclick="switchTab('reminder');return false;">
+              <a class="nav-link" href="#reminder" id="nav-reminder" onclick="switchTab('reminder');return false;">
                 <span class="nav-link-icon"><i class="ti ti-bell"></i></span>
                 <span class="nav-link-title">上课提醒</span>
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link nav-item" href="#codes" id="nav-codes" onclick="switchTab('codes');return false;">
+              <a class="nav-link" href="#codes" id="nav-codes" onclick="switchTab('codes');return false;">
                 <span class="nav-link-icon"><i class="ti ti-key"></i></span>
                 <span class="nav-link-title">激活码库</span>
               </a>
             </li>
           </ul>
-          <div class="sidebar-footer">
-            <button class="btn btn-outline-primary w-100" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
-              <i class="ti ti-cloud-download me-1"></i>从云托管同步
-            </button>
-            <button class="btn btn-ghost-secondary w-100" onclick="refreshCurrentTab(true)">
-              <i class="ti ti-refresh me-1"></i>刷新本页
-            </button>
-          </div>
+        </div>
+        <div class="sidebar-footer yx-sidebar-footer">
+          <button type="button" class="btn btn-outline-primary w-100" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
+            <i class="ti ti-cloud-download me-1"></i>从云托管同步
+          </button>
+          <button type="button" class="btn btn-ghost-secondary w-100" onclick="refreshCurrentTab(true)">
+            <i class="ti ti-refresh me-1"></i>刷新本页
+          </button>
         </div>
       </div>
     </aside>
@@ -96,11 +96,11 @@
     <div class="page-wrapper">
       <header class="navbar navbar-expand-md d-print-none yx-topbar">
         <div class="container-xl">
-          <div class="d-flex align-items-center gap-2 min-w-0">
+          <div class="d-flex align-items-center gap-2 min-w-0 yx-topbar-left">
             <button type="button" class="yx-menu-btn" id="yxMenuBtn" onclick="toggleAdminDrawer()" aria-label="打开菜单" aria-controls="yxSidebar" aria-expanded="false">
               <i class="ti ti-menu-2" style="font-size:1.25rem"></i>
             </button>
-            <div class="min-w-0 d-none d-sm-block">
+            <div class="min-w-0 yx-topbar-titles">
               <div class="yx-topbar-title text-truncate">运营管理中心</div>
               <div class="yx-topbar-sub d-none d-lg-block text-truncate">盐小工校园通 · 真实运营数据</div>
             </div>
@@ -122,6 +122,11 @@
           </div>
         </div>
       </header>
+      <div class="yx-top-meta" id="yxTopMeta" aria-live="polite">
+        <span class="yx-top-meta-label">运营后台</span>
+        <span class="yx-top-meta-chip" id="yxPassChip">及格率 <strong id="yxPassChipVal">--</strong>%</span>
+        <span class="yx-top-meta-chip muted" id="yxActiveChip">今日活跃 <strong id="yxActiveChipVal">--</strong></span>
+      </div>
 
       <div class="page-body">
         <div class="container-xl">
@@ -213,7 +218,7 @@
                     <h3>核心指标卡</h3>
                     <button type="button" class="yx-pill-btn light" style="padding:0.35rem 0.8rem;font-size:0.75rem" onclick="switchTab('colleges')">学院 +</button>
                   </div>
-                  <div class="yx-stack-cards" aria-hidden="true">
+                  <div class="yx-stack-cards" id="yxCoreKpiStack">
                     <div class="yx-stack-card c1"><div class="k">微信官方累计</div><div class="v" id="wxOfficialTotalUsersStack">--</div></div>
                     <div class="yx-stack-card c2"><div class="k">昨日打开</div><div class="v" id="wxOfficialSessionCntStack">--</div></div>
                     <div class="yx-stack-card c3">
@@ -488,6 +493,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
-  <script src="/js/admin-app.js"></script>
+  <script src="/js/admin-app.js?v=mobile429"></script>
 </body>
 </html>

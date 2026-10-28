@@ -260,8 +260,8 @@
       currentTab = tabId
       window.location.hash = tabId
 
-      // 切换导航高亮（侧栏 + 顶栏胶囊）
-      document.querySelectorAll('.nav-item').forEach(btn => {
+      // 切换导航高亮（侧栏 + 顶栏胶囊）——只点 a.nav-link，避免误伤 li.nav-item
+      document.querySelectorAll('#sidebar-menu a.nav-link').forEach(btn => {
         btn.classList.remove('text-indigo-600', 'bg-indigo-50', 'font-semibold', 'active-nav', 'text-indigo-700', 'active')
         btn.classList.add('text-slate-600', 'font-medium')
       })
@@ -373,6 +373,10 @@
       document.getElementById('statTotalExams').innerText = (ov.totalExamsFinished || (data.allExams ? data.allExams.length : 0)).toLocaleString()
       document.getElementById('statTotalPractices').innerText = (ov.totalPracticesStarted || 0).toLocaleString()
       document.getElementById('statPassRate').innerText = `${ov.examPassRate || 0}%`
+      const passChip = document.getElementById('yxPassChipVal')
+      if (passChip) passChip.innerText = `${ov.examPassRate || 0}`
+      const activeChip = document.getElementById('yxActiveChipVal')
+      if (activeChip) activeChip.innerText = `${(ov.activeUsersToday || 0).toLocaleString()}`
       const elTotalEvents = document.getElementById('statTotalEvents')
       if (elTotalEvents) elTotalEvents.innerText = (ov.totalEvents || 0).toLocaleString()
       const elActiveToday = document.getElementById('statActiveToday')
@@ -425,15 +429,10 @@
       const rankBox = document.getElementById('classRankList')
       if (classList.length > 0) {
         rankBox.innerHTML = classList.slice(0, 8).map((cg, idx) => `
-          <div onclick="jumpToClassQuery('${escapeHtml(cg.className)}')" class="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-slate-50 transition cursor-pointer group border-b border-slate-50 last:border-0">
-            <div class="flex items-center space-x-2">
-              <span class="w-5 h-5 rounded-full ${idx < 3 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-[10px]">${idx + 1}</span>
-              <span class="font-medium text-slate-800 group-hover:text-indigo-600">${escapeHtml(cg.className)}</span>
-            </div>
-            <div class="flex items-center space-x-2">
-              <span class="text-slate-500 font-semibold">${cg.studentCount || cg.userCount || 0} 位同学</span>
-              <span class="text-slate-300 group-hover:text-indigo-500">›</span>
-            </div>
+          <div onclick="jumpToClassQuery('${escapeHtml(cg.className)}')" class="yx-rank-row">
+            <span class="yx-rank-num ${idx < 3 ? 'top' : ''}">${idx + 1}</span>
+            <span class="yx-rank-name">${escapeHtml(cg.className)}</span>
+            <span class="yx-rank-count">${cg.studentCount || cg.userCount || 0} 位同学 ›</span>
           </div>
         `).join('')
       } else {
@@ -457,7 +456,7 @@
               </div>
               <span class="yx-status-pill ${e.isPassed ? 'ok' : 'bad'}">${e.isPassed ? '及格' : '未及格'}</span>
               <span class="yx-activity-meta">${formatTime(e.createdAt)}</span>
-              <span class="yx-activity-amt" style="color:${e.isPassed ? '#34d399' : '#fb7185'}">${e.score ?? 0}/${e.total ?? 100}</span>
+              <span class="yx-activity-amt ${e.isPassed ? 'ok' : 'bad'}">${e.score ?? 0}/${e.total ?? 100}</span>
             </div>`
           }).join('')
         } else {
