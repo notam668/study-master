@@ -737,7 +737,7 @@
       const grid = document.getElementById('collegeCardsGrid')
       if (!grid) return
       if (!list.length) {
-        grid.innerHTML = '<div class="col-span-full text-center text-slate-400 text-xs py-10">没有匹配的学院</div>'
+        grid.innerHTML = '<div class="yx-empty" style="padding:28px 16px;text-align:center">没有匹配的学院。<button type="button" class="btn btn-ghost" onclick="clearCollegeFilters()">清除筛选</button></div>'
         return
       }
       grid.innerHTML = list.map(c => {
@@ -1099,6 +1099,8 @@
           document.getElementById('annContact').value = cfg.contactValue || ''
           document.getElementById('annShowMode').value = cfg.showMode || 'always'
           document.getElementById('annImage').value = cfg.image || ''
+          const fail = document.getElementById('annLoadError')
+          if (fail) fail.classList.add('hidden')
           updateAnnouncementPreview()
         }
       } catch (err) {
@@ -1126,12 +1128,27 @@
       if (textEl) textEl.innerText = text
       if (contactEl) contactEl.innerText = contact
       const imgEl = document.getElementById('prevImg')
+      const imgFallback = document.getElementById('prevImgFallback')
+      if (imgFallback) imgFallback.classList.add('hidden')
       if (imgEl) {
+        imgEl.onload = null
+        imgEl.onerror = null
         if (img) {
+          imgEl.onload = () => {
+            imgEl.classList.remove('hidden', 'd-none')
+            imgEl.style.display = 'block'
+            if (imgFallback) imgFallback.classList.add('hidden')
+          }
+          imgEl.onerror = () => {
+            imgEl.classList.add('hidden')
+            imgEl.style.display = 'none'
+            if (imgFallback) imgFallback.classList.remove('hidden')
+          }
+          imgEl.classList.add('hidden')
+          imgEl.style.display = 'none'
           imgEl.src = img
-          imgEl.classList.remove('hidden', 'd-none')
-          imgEl.style.display = 'block'
         } else {
+          imgEl.removeAttribute('src')
           imgEl.classList.add('hidden')
           imgEl.style.display = 'none'
         }

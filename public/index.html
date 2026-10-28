@@ -325,7 +325,7 @@
           <!-- USERS -->
           <section id="tab-users" class="tab-content">
             <div class="page-header mb-3"><h2 class="page-title">考生全库</h2>
-              <div class="text-secondary">左右滑动查看电话、学号和成绩。姓名列保持固定。</div></div>
+              <div class="text-secondary">桌面可左右滑动，姓名列保持固定。窄屏只留考生、档案状态和详情。</div></div>
             <div class="yx-toolbar">
               <input id="userSearchInput" class="form-control" placeholder="搜索姓名 / 学院 / 班级 / 电话 / 学号" oninput="handleUserSearch()" />
               <div class="yx-filter-chips" id="userFilterChips">
@@ -383,6 +383,7 @@
                       <select id="annShowMode" class="form-select"><option value="once_per_day">每天一次</option><option value="always">每次打开</option><option value="once">仅一次</option></select>
                     </div>
                     <button id="btnSaveAnn" type="button" class="btn btn-primary" onclick="saveAnnouncementConfig()">保存并同步</button>
+                    <p class="yx-page-desc" style="margin-top:8px">保存后按展示模式向全体小程序用户弹出，无需重新发版。</p>
                   </div>
                 </div>
               </div>
@@ -396,7 +397,8 @@
                       </div>
                       <div id="prevBody" class="yx-preview-sheet hidden">
                         <div class="p-3 border-bottom"><div class="fw-bold" id="prevTitle"></div></div>
-                        <img id="prevImg" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" class="w-100 hidden" style="max-height:160px;object-fit:cover" />
+                        <img id="prevImg" alt="" class="w-100 hidden" style="max-height:160px;object-fit:cover" />
+                        <div id="prevImgFallback" class="yx-img-fallback hidden">配图无法显示。请检查 URL 是否能打开。</div>
                         <div class="p-3 small" id="prevText" style="white-space:pre-wrap"></div>
                         <div class="p-3 text-secondary small border-top" id="prevContact"></div>
                       </div>
