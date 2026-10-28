@@ -260,7 +260,7 @@
       currentTab = tabId
       window.location.hash = tabId
 
-      // 切换导航高亮（兼容 Tailwind 旧类 + Tabler active）
+      // 切换导航高亮（侧栏 + 顶栏胶囊）
       document.querySelectorAll('.nav-item').forEach(btn => {
         btn.classList.remove('text-indigo-600', 'bg-indigo-50', 'font-semibold', 'active-nav', 'text-indigo-700', 'active')
         btn.classList.add('text-slate-600', 'font-medium')
@@ -270,6 +270,9 @@
         activeNav.classList.remove('text-slate-600', 'font-medium')
         activeNav.classList.add('text-indigo-700', 'bg-indigo-50', 'font-semibold', 'active-nav', 'active')
       }
+      document.querySelectorAll('#yxCapsuleNav a').forEach(a => a.classList.remove('active'))
+      const cap = document.getElementById(`cap-${tabId}`)
+      if (cap) cap.classList.add('active')
       if (tabId === 'colleges') renderCollegeCards()
 
       // 切换视图容器
@@ -338,11 +341,11 @@
 
           if (badge && text && ping) {
             if (cloud.healthy) {
-              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
+              badge.className = 'yx-status-pill ok'
               text.innerText = `探活正常 (${cloud.statusCode || 200} OK)`
               ping.innerText = `探活延迟: ${cloud.pingMs || 0} ms`
             } else {
-              badge.className = 'inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200'
+              badge.className = 'yx-status-pill bad'
               text.innerText = '云端连接异常'
               ping.innerText = `错误: ${cloud.error || '超时'}`
             }
@@ -437,24 +440,218 @@
         rankBox.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">暂无班级分布数据</p>'
       }
 
-      // 最近动态
+      // 最近动态（玻璃拟态列表）
       const allExams = data.allExams || []
       const actBox = document.getElementById('recentActivityList')
-      if (allExams.length > 0) {
-        actBox.innerHTML = allExams.slice(0, 5).map(e => `
-          <div class="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0">
-            <div>
-              <span class="font-semibold text-slate-900">${escapeHtml(e.realName || '未知考生')}</span>
-              <span class="text-slate-400 ml-1">(${escapeHtml(e.className || '--')})</span>
+      if (actBox) {
+        if (allExams.length > 0) {
+          actBox.innerHTML = allExams.slice(0, 8).map(e => {
+            const name = e.realName || '未知考生'
+            const initial = (name && name[0]) || '考'
+            return `
+            <div class="yx-activity-row">
+              <div class="yx-activity-icon">${escapeHtml(initial)}</div>
+              <div class="min-w-0">
+                <div class="yx-activity-title text-truncate">${escapeHtml(name)}</div>
+                <div class="yx-activity-sub text-truncate">${escapeHtml(e.className || '--')} · ${escapeHtml(e.bankTitle || '模考')}</div>
+              </div>
+              <span class="yx-status-pill ${e.isPassed ? 'ok' : 'bad'}">${e.isPassed ? '及格' : '未及格'}</span>
+              <span class="yx-activity-meta">${formatTime(e.createdAt)}</span>
+              <span class="yx-activity-amt" style="color:${e.isPassed ? '#34d399' : '#fb7185'}">${e.score ?? 0}/${e.total ?? 100}</span>
+            </div>`
+          }).join('')
+        } else {
+          actBox.innerHTML = '<p class="text-secondary small py-4 text-center">暂无近期答卷记录</p>'
+        }
+      }
+
+      // 同步右侧堆叠卡数字
+      const wxStack = data.wechatOfficial
+      const stackTotal = document.getElementById('wxOfficialTotalUsersStack')
+      const stackSession = document.getElementById('wxOfficialSessionCntStack')
+      if (wxStack && wxStack.visitTotal != null) {
+        if (stackTotal) stackTotal.innerText = Number(wxStack.visitTotal || 0).toLocaleString()
+        if (stackSession) stackSession.innerText = Number(wxStack.sessionCnt || 0).toLocaleString()
+      }
+
+      // 今日事件徽章色
+      const todayEv = Number((data.overview || {}).todayEvents || 0)
+      const todayBadge = document.getElementById('statTodayEventsBadge')
+      if (todayBadge) {
+        todayBadge.className = todayEv > 0 ? 'yx-badge-up' : 'yx-badge-down'
+      }
+
+      renderDashboardCharts(data)
+      renderCollegeQuickRail(data)
+    }
+
+    let examFlowChartInst = null
+    let collegeDonutChartInst = null
+    const YX_CHART_COLORS = ['#a78bfa', '#c8f542', '#5ef0d0', '#fb7185', '#fb923c', '#60a5fa', '#f472b6', '#34d399']
+
+    function buildLast7DayExamCounts(exams) {
+      const days = []
+      const map = {}
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date()
+        d.setHours(0, 0, 0, 0)
+        d.setDate(d.getDate() - i)
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+        const label = `${d.getMonth()+1}/${d.getDate()}`
+        days.push({ key, label })
+        map[key] = 0
+      }
+      ;(exams || []).forEach(e => {
+        if (!e || !e.createdAt) return
+        const d = new Date(e.createdAt)
+        if (Number.isNaN(d.getTime())) return
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+        if (key in map) map[key] += 1
+      })
+      return {
+        labels: days.map(d => d.label),
+        values: days.map(d => map[d.key])
+      }
+    }
+
+    function renderDashboardCharts(data) {
+      if (typeof Chart === 'undefined') return
+      const flow = buildLast7DayExamCounts(data.allExams || [])
+      const barCanvas = document.getElementById('examFlowChart')
+      if (barCanvas) {
+        if (examFlowChartInst) examFlowChartInst.destroy()
+        examFlowChartInst = new Chart(barCanvas, {
+          type: 'bar',
+          data: {
+            labels: flow.labels,
+            datasets: [{
+              label: '交卷数',
+              data: flow.values,
+              borderRadius: 14,
+              borderSkipped: false,
+              backgroundColor: (ctx) => {
+                const i = ctx.dataIndex
+                const max = Math.max(...flow.values, 1)
+                const v = flow.values[i] || 0
+                return v === max && v > 0
+                  ? 'rgba(167, 139, 250, 0.95)'
+                  : 'rgba(255, 255, 255, 0.12)'
+              },
+              hoverBackgroundColor: 'rgba(196, 181, 253, 0.95)'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(18,20,28,0.92)',
+                titleColor: '#fff',
+                bodyColor: '#c4b5fd',
+                padding: 10,
+                cornerRadius: 12,
+                displayColors: false,
+                callbacks: {
+                  label: (c) => `${c.parsed.y} 份答卷`
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: { color: '#6b7280', font: { size: 11, weight: '600' } },
+                border: { display: false }
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                ticks: { color: '#6b7280', precision: 0, font: { size: 11 } },
+                border: { display: false }
+              }
+            }
+          }
+        })
+      }
+
+      const colleges = ((data.collegeStats || []).filter(c => c.college && c.college !== '未归属学院')).slice(0, 7)
+      const donutCanvas = document.getElementById('collegeDonutChart')
+      const legend = document.getElementById('collegeDonutLegend')
+      const totalEl = document.getElementById('collegeDonutTotal')
+      const totalStudents = colleges.reduce((s, c) => s + Number(c.studentCount || 0), 0)
+      if (totalEl) totalEl.innerText = totalStudents ? totalStudents.toLocaleString() : '0'
+      if (legend) {
+        legend.innerHTML = colleges.length ? colleges.map((c, idx) => {
+          const pct = totalStudents ? Math.round((Number(c.studentCount || 0) / totalStudents) * 100) : 0
+          const color = YX_CHART_COLORS[idx % YX_CHART_COLORS.length]
+          return `<div class="yx-legend-item" onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')">
+            <div class="yx-legend-left">
+              <span class="yx-legend-bar" style="background:${color}"></span>
+              <span class="yx-legend-name" title="${escapeHtml(c.college)}">${escapeHtml(c.college)}</span>
             </div>
-            <div class="flex items-center space-x-2">
-              <span class="font-bold ${e.isPassed ? 'text-emerald-600' : 'text-amber-600'}">${e.score}/${e.total}分</span>
-              <span class="text-[10px] text-slate-400">${formatTime(e.createdAt)}</span>
+            <span class="yx-legend-pct">${pct}%</span>
+          </div>`
+        }).join('') : '<div class="text-secondary small">暂无学院数据</div>'
+      }
+      if (donutCanvas) {
+        if (collegeDonutChartInst) collegeDonutChartInst.destroy()
+        collegeDonutChartInst = new Chart(donutCanvas, {
+          type: 'doughnut',
+          data: {
+            labels: colleges.map(c => c.college),
+            datasets: [{
+              data: colleges.map(c => Number(c.studentCount || 0)),
+              backgroundColor: colleges.map((_, i) => YX_CHART_COLORS[i % YX_CHART_COLORS.length]),
+              borderWidth: 0,
+              hoverOffset: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '72%',
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(18,20,28,0.92)',
+                titleColor: '#fff',
+                bodyColor: '#c4b5fd',
+                padding: 10,
+                cornerRadius: 12
+              }
+            }
+          }
+        })
+      }
+    }
+
+    function renderCollegeQuickRail(data) {
+      const list = ((data && data.collegeStats) || []).filter(c => c.college && c.college !== '未归属学院').slice(0, 6)
+      const chips = document.getElementById('collegeChipRow')
+      const quick = document.getElementById('collegeQuickList')
+      if (chips) {
+        chips.innerHTML = list.map((c, i) => {
+          const short = (c.college || '').slice(0, 1) || '院'
+          return `<button type="button" class="yx-chip" style="background:linear-gradient(135deg, ${YX_CHART_COLORS[i % YX_CHART_COLORS.length]}, #5ef0d0)" title="${escapeHtml(c.college)}" onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')">${escapeHtml(short)}</button>`
+        }).join('') || ''
+      }
+      if (quick) {
+        if (!list.length) {
+          quick.innerHTML = '<div class="text-secondary small py-2">暂无学院分布</div>'
+          return
+        }
+        quick.innerHTML = list.map((c, i) => `
+          <div class="yx-sub-row" onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')" style="cursor:pointer">
+            <div class="yx-sub-left">
+              <div class="yx-sub-ico" style="color:${YX_CHART_COLORS[i % YX_CHART_COLORS.length]}">${escapeHtml((c.college || '院')[0])}</div>
+              <div class="min-w-0">
+                <div class="yx-sub-name text-truncate">${escapeHtml(c.college)}</div>
+                <div class="yx-sub-meta">${c.classCount || 0} 班 · 完善 ${c.completedRate || 0}%</div>
+              </div>
             </div>
+            <div class="yx-sub-price">${c.studentCount || 0}人</div>
           </div>
         `).join('')
-      } else {
-        actBox.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">暂无近期答卷记录</p>'
       }
     }
 
@@ -832,8 +1029,8 @@
       const collegeEl = document.getElementById('userCollegeFilterSelect')
       const collegeFilter = collegeEl ? collegeEl.value : 'all'
       let filtered = globalStats.users
-      if (filter === 'completed') filtered = filtered.filter(u => u.isProfileCompleted)
-      if (filter === 'pending') filtered = filtered.filter(u => !u.isProfileCompleted)
+      if (filter === 'done' || filter === 'completed') filtered = filtered.filter(u => u.isProfileCompleted)
+      if (filter === 'todo' || filter === 'pending') filtered = filtered.filter(u => !u.isProfileCompleted)
       if (collegeFilter && collegeFilter !== 'all') {
         filtered = filtered.filter(u => userCollegeOf(u) === collegeFilter)
       }
@@ -1065,15 +1262,14 @@
 
     // 手动一键拉取线上真实考生数据
     async function syncFromCloudBaseAction() {
-      const btn = document.getElementById('btnSyncCloud')
-      btn.disabled = true
-      btn.innerText = '正在同步中...'
-      showToast('正在从云端拉取 500+ 真实考生档案与成绩...', 'info')
+      const btns = [document.getElementById('btnSyncCloud'), document.getElementById('btnSyncCloudRail')].filter(Boolean)
+      btns.forEach(btn => { btn.disabled = true; btn.innerText = '正在同步中...' })
+      showToast('正在从云端拉取真实考生档案与成绩...', 'info')
       try {
         const res = await adminFetch('/api/admin/sync-cloud', { method: 'POST' })
         const json = await res.json()
         if (json.code === 0) {
-          showToast(json.message, 'success')
+          showToast(json.message || '同步完成', 'success')
           loadAllData()
         } else {
           showToast(json.message || '同步失败', 'error')
@@ -1081,8 +1277,8 @@
       } catch (e) {
         showToast('网络同步异常: ' + e.message, 'error')
       } finally {
-        btn.disabled = false
-        btn.innerHTML = `<svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>一键拉取最新线上数据`
+        const label = '<i class="ti ti-cloud-download me-1"></i>从云托管同步'
+        btns.forEach(btn => { btn.disabled = false; btn.innerHTML = label })
       }
     }
 
@@ -1099,10 +1295,14 @@
 
     function showToast(msg, type = 'success') {
       const el = document.getElementById('toast')
+      if (!el) return
       document.getElementById('toastMsg').innerText = msg
       document.getElementById('toastIcon').innerText = type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ')
+      el.classList.add('show')
       el.classList.remove('translate-y-20', 'opacity-0')
-      setTimeout(() => {
+      clearTimeout(window.__yxToastTimer)
+      window.__yxToastTimer = setTimeout(() => {
+        el.classList.remove('show')
         el.classList.add('translate-y-20', 'opacity-0')
       }, 3000)
     }
@@ -1120,3 +1320,10 @@
     window.showAuthModal = showAuthModal
     window.hideAuthModal = hideAuthModal
     window.togglePasswordVisibility = togglePasswordVisibility
+    window.renderDashboardCharts = renderDashboardCharts
+    window.renderCollegeQuickRail = renderCollegeQuickRail
+    window.syncFromCloudBaseAction = syncFromCloudBaseAction
+    window.switchTab = switchTab
+    window.refreshCurrentTab = refreshCurrentTab
+    window.exportUsersCsv = exportUsersCsv
+    window.exportExamsCsv = exportExamsCsv

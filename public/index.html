@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#070708" />
+  <meta name="theme-color" content="#0b0c10" />
   <meta name="color-scheme" content="dark" />
   <title>盐小工校园通 · 运营管理后台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -96,19 +96,29 @@
     <div class="page-wrapper">
       <header class="navbar navbar-expand-md d-print-none yx-topbar">
         <div class="container-xl">
-          <div class="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
+          <div class="d-flex align-items-center gap-2 min-w-0">
             <button type="button" class="yx-menu-btn" id="yxMenuBtn" onclick="toggleAdminDrawer()" aria-label="打开菜单" aria-controls="yxSidebar" aria-expanded="false">
               <i class="ti ti-menu-2" style="font-size:1.25rem"></i>
             </button>
-            <div class="min-w-0">
+            <div class="min-w-0 d-none d-sm-block">
               <div class="yx-topbar-title text-truncate">运营管理中心</div>
-              <div class="yx-topbar-sub d-none d-md-block text-truncate">学生档案 · 学情 · 运营 · MySQL / 云托管</div>
+              <div class="yx-topbar-sub d-none d-lg-block text-truncate">盐小工校园通 · 真实运营数据</div>
             </div>
           </div>
+          <nav class="yx-capsule-nav" id="yxCapsuleNav" aria-label="主导航胶囊">
+            <a href="#dashboard" id="cap-dashboard" class="active" onclick="switchTab('dashboard');return false;">仪表盘</a>
+            <a href="#colleges" id="cap-colleges" onclick="switchTab('colleges');return false;">学院</a>
+            <a href="#classes" id="cap-classes" onclick="switchTab('classes');return false;">班级</a>
+            <a href="#users" id="cap-users" onclick="switchTab('users');return false;">考生</a>
+            <a href="#exams" id="cap-exams" onclick="switchTab('exams');return false;">模考</a>
+            <a href="#announcement" id="cap-announcement" onclick="switchTab('announcement');return false;">公告</a>
+            <a href="#reminder" id="cap-reminder" onclick="switchTab('reminder');return false;">提醒</a>
+            <a href="#codes" id="cap-codes" onclick="switchTab('codes');return false;">激活码</a>
+          </nav>
           <div class="admin-header-actions">
-            <button class="btn btn-outline-secondary btn-sm" onclick="exportUsersCsv()"><i class="ti ti-download"></i><span class="d-none d-sm-inline"> 导出考生</span></button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="exportExamsCsv()"><i class="ti ti-download"></i><span class="d-none d-sm-inline"> 导出模考</span></button>
-            <button class="btn btn-ghost-secondary btn-sm" type="button" onclick="adminLogout()" title="退出登录" aria-label="退出登录"><i class="ti ti-logout"></i></button>
+            <button type="button" class="yx-util-btn" onclick="refreshCurrentTab(true)" title="刷新" aria-label="刷新"><i class="ti ti-refresh"></i></button>
+            <button type="button" class="yx-util-btn d-none d-md-inline-flex" onclick="exportUsersCsv()" title="导出考生" aria-label="导出考生"><i class="ti ti-download"></i></button>
+            <button type="button" class="yx-util-btn" onclick="adminLogout()" title="退出登录" aria-label="退出登录"><i class="ti ti-logout"></i></button>
           </div>
         </div>
       </header>
@@ -117,74 +127,149 @@
         <div class="container-xl">
 
           <!-- DASHBOARD -->
-          <section id="tab-dashboard" class="tab-content active space-y-6">
-            <div class="row row-cards mb-3">
-              <div class="col-12">
-                <div class="card">
-                  <div class="card-stamp"><div class="card-stamp-icon bg-green"><i class="ti ti-cloud"></i></div></div>
-                  <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-                      <div>
-                        <h3 class="card-title mb-1">微信云托管 (WeChat CloudBase) 容器服务</h3>
-                        <div class="text-secondary small">wx.cloud.callContainer · 环境 <code id="cloudEnvId">prod-d0g39zvr13ada49af</code> · 服务 studymaster</div>
+          <section id="tab-dashboard" class="tab-content active">
+            <h2 class="yx-dash-title">运营总览</h2>
+            <div class="yx-dash-layout">
+              <div class="yx-dash-main">
+                <div class="yx-hero-row">
+                  <div class="yx-hero-card">
+                    <div>
+                      <div class="yx-hero-label">建档考生</div>
+                      <div class="yx-hero-value" id="statTotalUsers">--</div>
+                      <div class="yx-hero-sub">完善档案 <span id="statProfileDone">--</span> · 学习事件 <span id="statTotalEvents">--</span></div>
+                    </div>
+                    <div class="yx-hero-actions">
+                      <button type="button" class="yx-pill-btn dark" onclick="switchTab('users')"><i class="ti ti-users"></i> 考生全库</button>
+                      <button type="button" class="yx-pill-btn light" onclick="syncFromCloudBaseAction()"><i class="ti ti-cloud-download"></i> 云同步</button>
+                    </div>
+                  </div>
+                  <div class="yx-side-metrics">
+                    <div class="yx-metric-card">
+                      <div class="yx-metric-label">累计模考</div>
+                      <div class="yx-metric-row">
+                        <div class="yx-metric-value" id="statTotalExams">--</div>
+                        <span class="yx-badge-up" id="statPassRateBadge">及格 <span id="statPassRate">--</span>%</span>
                       </div>
-                      <span id="cloudStatusBadge" class="badge bg-green-lt"><span id="cloudStatusText">探活检测中...</span></span>
+                      <div class="kpi-sub mt-1">练习 <span id="statTotalPractices">--</span> 次</div>
                     </div>
-                    <div class="yx-status-strip">
-                      <div><div class="label">探活</div><div class="value" id="cloudPingText">检测中...</div></div>
-                      <div><div class="label">最近同步</div><div class="value" id="cloudLastSyncText">刚刚</div></div>
-                      <div><div class="label">健康入口</div><div class="value"><a target="_blank" rel="noopener" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster health ↗</a></div></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="row row-cards mb-3 g-2">
-              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">建档考生</div><div class="kpi-value" id="statTotalUsers">--</div><div class="kpi-sub">完善档案 <span id="statProfileDone">--</span></div></div></div></div>
-              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">累计模考</div><div class="kpi-value" id="statTotalExams">--</div><div class="kpi-sub">及格率 <span id="statPassRate">--</span>%</div></div></div></div>
-              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">练习次数</div><div class="kpi-value" id="statTotalPractices">--</div><div class="kpi-sub">学习事件 <span id="statTotalEvents">--</span></div></div></div></div>
-              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">今日活跃</div><div class="kpi-value" id="statActiveToday">--</div><div class="kpi-sub">今日事件 <span id="statTodayEvents">--</span></div></div></div></div>
-            </div>
-
-            <div class="row row-cards mb-3">
-              <div class="col-12">
-                <div class="card yx-official-panel">
-                  <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                      <h3 class="card-title mb-0">盐小工校园通 · 核心运营指标（微信官方）</h3>
-                      <span class="badge bg-primary-lt" id="wxOfficialPeriodText">数据周期：--</span>
-                    </div>
-                    <div class="row g-3">
-                      <div class="col-6 col-md-3"><div class="text-secondary small">官方累计用户</div><div class="h2" id="wxOfficialTotalUsers">--</div><div class="small" id="wxOfficialTotalUsersSub"></div></div>
-                      <div class="col-6 col-md-3"><div class="text-secondary small">昨日打开次数</div><div class="h2" id="wxOfficialSessionCnt">--</div><div class="small" id="wxOfficialSessionCntSub"></div></div>
-                      <div class="col-6 col-md-3"><div class="text-secondary small">昨日访问人数 DAU</div><div class="h2" id="wxOfficialVisitUv">--</div><div class="small" id="wxOfficialVisitUvSub"></div></div>
-                      <div class="col-6 col-md-3"><div class="text-secondary small">昨日新增用户</div><div class="h2" id="wxOfficialVisitUvNew">--</div><div class="small" id="wxOfficialVisitUvNewSub"></div></div>
+                    <div class="yx-metric-card">
+                      <div class="yx-metric-label">今日活跃</div>
+                      <div class="yx-metric-row">
+                        <div class="yx-metric-value" id="statActiveToday">--</div>
+                        <span class="yx-badge-down" id="statTodayEventsBadge">事件 <span id="statTodayEvents">--</span></span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <div class="row row-cards mb-3">
-              <div class="col-lg-4">
-                <div class="card h-100">
-                  <div class="card-header"><h3 class="card-title">学院分布速览</h3><div class="card-actions"><a href="#colleges" onclick="switchTab('colleges');return false;" class="btn btn-sm">查看全部</a></div></div>
-                  <div class="card-body" id="dashboardCollegeRank"><div class="text-secondary">加载中...</div></div>
+                <div class="yx-charts-row">
+                  <div class="card yx-chart-card">
+                    <div class="yx-chart-head">
+                      <h3>模考流水趋势</h3>
+                      <span class="text-secondary small">近 7 日交卷量</span>
+                    </div>
+                    <div class="yx-chart-wrap"><canvas id="examFlowChart" aria-label="模考流水柱状图"></canvas></div>
+                  </div>
+                  <div class="card yx-chart-card">
+                    <div class="yx-chart-head">
+                      <h3>学院分布</h3>
+                      <a href="#colleges" onclick="switchTab('colleges');return false;" class="btn btn-sm btn-ghost-secondary">全部</a>
+                    </div>
+                    <div class="yx-donut-wrap">
+                      <div class="yx-donut-canvas-box">
+                        <canvas id="collegeDonutChart" aria-label="学院分布环形图"></canvas>
+                        <div class="yx-donut-center">
+                          <div class="label">学院</div>
+                          <div class="value" id="collegeDonutTotal">--</div>
+                        </div>
+                      </div>
+                      <div class="yx-legend" id="collegeDonutLegend"></div>
+                    </div>
+                    <!-- keep legacy container for JS fallback / accessibility -->
+                    <div id="dashboardCollegeRank" class="d-none"></div>
+                  </div>
                 </div>
-              </div>
-              <div class="col-lg-4">
-                <div class="card h-100">
-                  <div class="card-header"><h3 class="card-title">各班考生分布</h3><div class="card-actions"><a href="#classes" onclick="switchTab('classes');return false;" class="btn btn-sm">班级详细</a></div></div>
+
+                <div class="card yx-list-card">
+                  <div class="yx-chart-head">
+                    <h3>最近模考动态</h3>
+                    <a href="#exams" onclick="switchTab('exams');return false;" class="btn btn-sm btn-ghost-secondary">流水</a>
+                  </div>
+                  <div id="recentActivityList"><div class="text-secondary small px-3 py-4 text-center">读取中...</div></div>
+                </div>
+
+                <div class="card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title mb-0">各班考生分布</h3>
+                    <a href="#classes" onclick="switchTab('classes');return false;" class="btn btn-sm btn-ghost-secondary">班级详细</a>
+                  </div>
                   <div class="list-group list-group-flush overflow-auto" style="max-height:280px" id="classRankList"><div class="list-group-item text-secondary">正在加载班级数据...</div></div>
                 </div>
               </div>
-              <div class="col-lg-4">
-                <div class="card h-100">
-                  <div class="card-header"><h3 class="card-title">最近活跃</h3></div>
-                  <div class="list-group list-group-flush overflow-auto" style="max-height:280px" id="recentActivityList"><div class="list-group-item text-secondary">读取中...</div></div>
+
+              <aside class="yx-dash-rail">
+                <div class="card yx-rail-card yx-rail-span-2">
+                  <div class="yx-rail-head">
+                    <h3>核心指标卡</h3>
+                    <button type="button" class="yx-pill-btn light" style="padding:0.35rem 0.8rem;font-size:0.75rem" onclick="switchTab('colleges')">学院 +</button>
+                  </div>
+                  <div class="yx-stack-cards" aria-hidden="true">
+                    <div class="yx-stack-card c1"><div class="k">微信官方累计</div><div class="v" id="wxOfficialTotalUsersStack">--</div></div>
+                    <div class="yx-stack-card c2"><div class="k">昨日打开</div><div class="v" id="wxOfficialSessionCntStack">--</div></div>
+                    <div class="yx-stack-card c3">
+                      <div class="k">盐小工校园通</div>
+                      <div class="v" id="wxOfficialVisitUv">--</div>
+                      <div class="s">昨日 DAU · <span id="wxOfficialPeriodText">数据周期：--</span></div>
+                    </div>
+                  </div>
+                  <div class="yx-official-mini">
+                    <div>
+                      <div class="k">官方累计用户</div>
+                      <div class="v" id="wxOfficialTotalUsers">--</div>
+                      <div class="s" id="wxOfficialTotalUsersSub"></div>
+                    </div>
+                    <div>
+                      <div class="k">昨日打开次数</div>
+                      <div class="v" id="wxOfficialSessionCnt">--</div>
+                      <div class="s" id="wxOfficialSessionCntSub"></div>
+                    </div>
+                    <div>
+                      <div class="k">昨日新增</div>
+                      <div class="v" id="wxOfficialVisitUvNew">--</div>
+                      <div class="s" id="wxOfficialVisitUvNewSub"></div>
+                    </div>
+                    <div>
+                      <div class="k">DAU 说明</div>
+                      <div class="v" style="font-size:0.85rem" id="wxOfficialVisitUvSub">--</div>
+                      <div class="s">访问人数</div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+
+                <div class="card yx-rail-card">
+                  <div class="yx-rail-head">
+                    <h3>云托管状态</h3>
+                    <span id="cloudStatusBadge" class="yx-status-pill ok"><span id="cloudStatusText">探活检测中...</span></span>
+                  </div>
+                  <div class="yx-status-strip">
+                    <div><div class="label">探活</div><div class="value" id="cloudPingText">检测中...</div></div>
+                    <div><div class="label">最近同步</div><div class="value" id="cloudLastSyncText">刚刚</div></div>
+                    <div><div class="label">环境</div><div class="value"><code id="cloudEnvId">prod-d0g39zvr13ada49af</code></div></div>
+                    <div><div class="label">健康入口</div><div class="value"><a target="_blank" rel="noopener" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster ↗</a></div></div>
+                  </div>
+                  <button class="btn btn-outline-primary w-100 mt-3" id="btnSyncCloudRail" onclick="syncFromCloudBaseAction()">
+                    <i class="ti ti-cloud-download me-1"></i>从云托管同步
+                  </button>
+                </div>
+
+                <div class="card yx-rail-card">
+                  <div class="yx-rail-head">
+                    <h3>快捷学院</h3>
+                  </div>
+                  <div class="yx-chip-row" id="collegeChipRow"></div>
+                  <div id="collegeQuickList"><div class="text-secondary small py-2">加载中...</div></div>
+                </div>
+              </aside>
             </div>
           </section>
 
@@ -402,6 +487,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
   <script src="/js/admin-app.js"></script>
 </body>
 </html>
