@@ -2,38 +2,40 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#070708" />
+  <meta name="color-scheme" content="dark" />
   <title>盐小工校园通 · 运营管理后台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.12.0/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="/css/admin.css" />
 </head>
-<body class="layout-fluid">
+<body class="layout-fluid theme-dark" data-bs-theme="dark">
   <div class="page">
+    <div id="yxSidebarBackdrop" class="yx-sidebar-backdrop" onclick="closeAdminDrawer()" aria-hidden="true"></div>
     <!-- Sidebar -->
-    <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+    <aside id="yxSidebar" class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark" aria-label="主导航">
       <div class="container-fluid">
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
-          <span class="navbar-toggler-icon"></span>
-        </button>
         <h1 class="navbar-brand navbar-brand-autodark">
           <span class="d-flex align-items-center gap-2">
-            <span class="avatar avatar-sm bg-primary-lt text-primary">盐</span>
+            <span class="avatar avatar-sm">盐</span>
             <span>
               <span class="d-block fw-bold">盐小工校园通</span>
-              <small class="text-secondary" style="font-size:10px">运营管理中心</small>
+              <small>运营管理中心</small>
             </span>
           </span>
         </h1>
-        <div class="collapse navbar-collapse" id="sidebar-menu">
-          <ul class="navbar-nav pt-lg-3">
+        <div class="collapse navbar-collapse show" id="sidebar-menu">
+          <ul class="navbar-nav">
             <li class="nav-item">
               <a class="nav-link nav-item active" href="#dashboard" id="nav-dashboard" onclick="switchTab('dashboard');return false;">
-                <span class="nav-link-icon"><i class="ti ti-dashboard"></i></span>
+                <span class="nav-link-icon"><i class="ti ti-layout-dashboard"></i></span>
                 <span class="nav-link-title">仪表盘</span>
               </a>
             </li>
-            <li class="nav-item pt-2"><span class="nav-link disabled text-uppercase" style="font-size:10px;letter-spacing:.08em">学生档案</span></li>
+            <li><span class="nav-section-label">学生档案</span></li>
             <li class="nav-item">
               <a class="nav-link nav-item" href="#colleges" id="nav-colleges" onclick="switchTab('colleges');return false;">
                 <span class="nav-link-icon"><i class="ti ti-building-community"></i></span>
@@ -52,14 +54,14 @@
                 <span class="nav-link-title">考生全库</span>
               </a>
             </li>
-            <li class="nav-item pt-2"><span class="nav-link disabled text-uppercase" style="font-size:10px;letter-spacing:.08em">学情数据</span></li>
+            <li><span class="nav-section-label">学情数据</span></li>
             <li class="nav-item">
               <a class="nav-link nav-item" href="#exams" id="nav-exams" onclick="switchTab('exams');return false;">
                 <span class="nav-link-icon"><i class="ti ti-clipboard-list"></i></span>
                 <span class="nav-link-title">模考流水</span>
               </a>
             </li>
-            <li class="nav-item pt-2"><span class="nav-link disabled text-uppercase" style="font-size:10px;letter-spacing:.08em">运营工具</span></li>
+            <li><span class="nav-section-label">运营工具</span></li>
             <li class="nav-item">
               <a class="nav-link nav-item" href="#announcement" id="nav-announcement" onclick="switchTab('announcement');return false;">
                 <span class="nav-link-icon"><i class="ti ti-speakerphone"></i></span>
@@ -79,8 +81,8 @@
               </a>
             </li>
           </ul>
-          <div class="mt-auto mb-3 px-3">
-            <button class="btn btn-outline-primary w-100 mb-2" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
+          <div class="sidebar-footer">
+            <button class="btn btn-outline-primary w-100" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
               <i class="ti ti-cloud-download me-1"></i>从云托管同步
             </button>
             <button class="btn btn-ghost-secondary w-100" onclick="refreshCurrentTab(true)">
@@ -92,18 +94,21 @@
     </aside>
 
     <div class="page-wrapper">
-      <header class="navbar navbar-expand-md d-print-none">
+      <header class="navbar navbar-expand-md d-print-none yx-topbar">
         <div class="container-xl">
-          <div class="navbar-nav flex-row order-md-last gap-2 admin-header-actions">
+          <div class="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
+            <button type="button" class="yx-menu-btn" id="yxMenuBtn" onclick="toggleAdminDrawer()" aria-label="打开菜单" aria-controls="yxSidebar" aria-expanded="false">
+              <i class="ti ti-menu-2" style="font-size:1.25rem"></i>
+            </button>
+            <div class="min-w-0">
+              <div class="yx-topbar-title text-truncate">运营管理中心</div>
+              <div class="yx-topbar-sub d-none d-md-block text-truncate">学生档案 · 学情 · 运营 · MySQL / 云托管</div>
+            </div>
+          </div>
+          <div class="admin-header-actions">
             <button class="btn btn-outline-secondary btn-sm" onclick="exportUsersCsv()"><i class="ti ti-download"></i><span class="d-none d-sm-inline"> 导出考生</span></button>
             <button class="btn btn-outline-secondary btn-sm" onclick="exportExamsCsv()"><i class="ti ti-download"></i><span class="d-none d-sm-inline"> 导出模考</span></button>
-            <button class="btn btn-ghost-secondary btn-sm" type="button" onclick="adminLogout()" title="退出登录"><i class="ti ti-logout"></i></button>
-          </div>
-          <div class="d-flex align-items-center min-w-0">
-            <div class="min-w-0">
-              <div class="fw-bold text-truncate">盐小工校园通 · 运营管理中心</div>
-              <div class="text-secondary small d-none d-md-block">学生档案 · 学院/班级分类 · 学情与运营 · 数据以云托管/MySQL 为准</div>
-            </div>
+            <button class="btn btn-ghost-secondary btn-sm" type="button" onclick="adminLogout()" title="退出登录" aria-label="退出登录"><i class="ti ti-logout"></i></button>
           </div>
         </div>
       </header>
@@ -125,29 +130,29 @@
                       </div>
                       <span id="cloudStatusBadge" class="badge bg-green-lt"><span id="cloudStatusText">探活检测中...</span></span>
                     </div>
-                    <div class="row mt-3 g-2">
-                      <div class="col-md-4"><div class="text-secondary small">探活</div><div class="fw-bold" id="cloudPingText">检测中...</div></div>
-                      <div class="col-md-4"><div class="text-secondary small">最近同步</div><div class="fw-bold" id="cloudLastSyncText">刚刚</div></div>
-                      <div class="col-md-4"><div class="text-secondary small">健康入口</div><a class="small" target="_blank" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster health ↗</a></div>
+                    <div class="yx-status-strip">
+                      <div><div class="label">探活</div><div class="value" id="cloudPingText">检测中...</div></div>
+                      <div><div class="label">最近同步</div><div class="value" id="cloudLastSyncText">刚刚</div></div>
+                      <div><div class="label">健康入口</div><div class="value"><a target="_blank" rel="noopener" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster health ↗</a></div></div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div class="row row-cards mb-3">
-              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">建档考生</div><div class="h1 mb-0" id="statTotalUsers">--</div><div class="text-secondary small">完善档案 <span id="statProfileDone">--</span></div></div></div></div>
-              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">累计模考</div><div class="h1 mb-0" id="statTotalExams">--</div><div class="text-secondary small">及格率 <span id="statPassRate">--</span>%</div></div></div></div>
-              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">练习次数</div><div class="h1 mb-0" id="statTotalPractices">--</div><div class="text-secondary small">学习事件 <span id="statTotalEvents">--</span></div></div></div></div>
-              <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="text-secondary">今日活跃</div><div class="h1 mb-0" id="statActiveToday">--</div><div class="text-secondary small">今日事件 <span id="statTodayEvents">--</span></div></div></div></div>
+            <div class="row row-cards mb-3 g-2">
+              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">建档考生</div><div class="kpi-value" id="statTotalUsers">--</div><div class="kpi-sub">完善档案 <span id="statProfileDone">--</span></div></div></div></div>
+              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">累计模考</div><div class="kpi-value" id="statTotalExams">--</div><div class="kpi-sub">及格率 <span id="statPassRate">--</span>%</div></div></div></div>
+              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">练习次数</div><div class="kpi-value" id="statTotalPractices">--</div><div class="kpi-sub">学习事件 <span id="statTotalEvents">--</span></div></div></div></div>
+              <div class="col-6 col-lg-3"><div class="card card-sm kpi-card"><div class="card-body"><div class="kpi-label">今日活跃</div><div class="kpi-value" id="statActiveToday">--</div><div class="kpi-sub">今日事件 <span id="statTodayEvents">--</span></div></div></div></div>
             </div>
 
             <div class="row row-cards mb-3">
               <div class="col-12">
-                <div class="card bg-primary-lt">
+                <div class="card yx-official-panel">
                   <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                      <h3 class="card-title mb-0 text-primary">盐小工校园通 · 核心运营指标（微信官方）</h3>
+                      <h3 class="card-title mb-0">盐小工校园通 · 核心运营指标（微信官方）</h3>
                       <span class="badge bg-primary-lt" id="wxOfficialPeriodText">数据周期：--</span>
                     </div>
                     <div class="row g-3">
@@ -365,28 +370,27 @@
       </div>
 
       <footer class="footer footer-transparent d-print-none">
-        <div class="container-xl"><div class="text-secondary small">盐小工校园通 · Tabler Admin · 数据源：/api/admin + 云托管同步 · 勿把 Vercel /tmp 当唯一真相</div></div>
+        <div class="container-xl"><div class="text-secondary small">盐小工校园通 · 运营管理后台 · 数据源 MySQL / 云托管 · ycgxy.xyz</div></div>
       </footer>
     </div>
   </div>
 
   <!-- Auth modal -->
-  <div id="adminAuthModal">
-    <div class="card" style="width:min(420px,92vw)">
-      <div class="card-body p-4">
-        <h2 class="mb-1">盐小工校园通 · 运营管理中心</h2>
-        <p class="text-secondary">系统已启用访问权限保护，请输入管理员密码访问后台</p>
-        <div class="mb-3">
-          <label class="form-label">管理员密码</label>
-          <input type="password" id="adminPasswordInput" class="form-control" placeholder="请输入密码" />
-        </div>
-        <div class="mb-3 form-check">
-          <input class="form-check-input" type="checkbox" id="rememberPasswordCheck" />
-          <label class="form-check-label" for="rememberPasswordCheck">在本机记住登录（localStorage）</label>
-        </div>
-        <div id="adminAuthError" class="text-danger small mb-2 hidden" style="display:none" role="alert"></div>
-        <button type="button" id="adminAuthSubmitBtn" class="btn btn-primary w-100" onclick="handleAuthSubmit(event)">进入后台</button>
+  <div id="adminAuthModal" role="dialog" aria-modal="true" aria-labelledby="adminAuthTitle">
+    <div class="yx-login-card">
+      <div class="yx-login-mark" aria-hidden="true">盐</div>
+      <h2 id="adminAuthTitle">运营管理中心</h2>
+      <p class="yx-login-desc">盐小工校园通 · 访问已受保护。请输入管理员密码继续。</p>
+      <div class="mb-3">
+        <label class="form-label" for="adminPasswordInput">管理员密码</label>
+        <input type="password" id="adminPasswordInput" class="form-control" placeholder="请输入密码" autocomplete="current-password" />
       </div>
+      <div class="mb-3 form-check">
+        <input class="form-check-input" type="checkbox" id="rememberPasswordCheck" />
+        <label class="form-check-label" for="rememberPasswordCheck">在本机记住登录</label>
+      </div>
+      <div id="adminAuthError" class="text-danger small mb-2 hidden" style="display:none" role="alert"></div>
+      <button type="button" id="adminAuthSubmitBtn" class="btn btn-primary w-100" onclick="handleAuthSubmit(event)">进入后台</button>
     </div>
   </div>
 

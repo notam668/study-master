@@ -22,6 +22,35 @@
       sessionStorage.removeItem('yanxiaogong_admin_token')
     }
 
+
+    // ── 移动端侧栏抽屉 ───────────────────────────────────────
+    function openAdminDrawer() {
+      const side = document.getElementById('yxSidebar')
+      const back = document.getElementById('yxSidebarBackdrop')
+      const btn = document.getElementById('yxMenuBtn')
+      if (side) side.classList.add('yx-drawer-open')
+      if (back) back.classList.add('show')
+      document.body.classList.add('yx-drawer-lock')
+      if (btn) btn.setAttribute('aria-expanded', 'true')
+    }
+    function closeAdminDrawer() {
+      const side = document.getElementById('yxSidebar')
+      const back = document.getElementById('yxSidebarBackdrop')
+      const btn = document.getElementById('yxMenuBtn')
+      if (side) side.classList.remove('yx-drawer-open')
+      if (back) back.classList.remove('show')
+      document.body.classList.remove('yx-drawer-lock')
+      if (btn) btn.setAttribute('aria-expanded', 'false')
+    }
+    function toggleAdminDrawer() {
+      const side = document.getElementById('yxSidebar')
+      if (side && side.classList.contains('yx-drawer-open')) closeAdminDrawer()
+      else openAdminDrawer()
+    }
+    window.openAdminDrawer = openAdminDrawer
+    window.closeAdminDrawer = closeAdminDrawer
+    window.toggleAdminDrawer = toggleAdminDrawer
+
     function showAuthModal(errMsg = '') {
       const modal = document.getElementById('adminAuthModal')
       const errBox = document.getElementById('adminAuthError')
@@ -170,6 +199,12 @@
 
     // 页面加载入口
     document.addEventListener('DOMContentLoaded', async () => {
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') closeAdminDrawer()
+      })
+      window.addEventListener('resize', () => {
+        if (window.innerWidth >= 992) closeAdminDrawer()
+      })
       // 登录按钮 / 回车键绑定（此前 HTML 无 onclick、JS 未 addEventListener，导致点「进入后台」无反应）
       const authBtn = document.getElementById('adminAuthSubmitBtn')
       if (authBtn) authBtn.addEventListener('click', handleAuthSubmit)
@@ -242,14 +277,9 @@
       const activeContent = document.getElementById(`tab-${tabId}`)
       if (activeContent) activeContent.classList.add('active')
 
-      // 窄屏：点导航后收起侧栏
+      // 窄屏：点导航后关闭抽屉
       try {
-        const menu = document.getElementById('sidebar-menu')
-        if (menu && window.innerWidth < 992 && menu.classList.contains('show')) {
-          menu.classList.remove('show')
-          const toggler = document.querySelector('.navbar-vertical .navbar-toggler')
-          if (toggler) toggler.setAttribute('aria-expanded', 'false')
-        }
+        if (window.innerWidth < 992) closeAdminDrawer()
       } catch (_) {}
 
       // 按需加载特定模块
