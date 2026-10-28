@@ -192,11 +192,6 @@
       if (e) e.preventDefault()
       window.open(`/api/admin/export/exams.csv?token=${encodeURIComponent(getAdminToken())}`, '_blank')
     }
-    function exportUnusedCodes(e) {
-      if (e) e.preventDefault()
-      window.open(`/api/admin/export/unused-codes?token=${encodeURIComponent(getAdminToken())}`, '_blank')
-    }
-
     // 页面加载入口
     document.addEventListener('DOMContentLoaded', async () => {
       document.addEventListener('keydown', (ev) => {
@@ -220,7 +215,8 @@
 
       // 检查 hash
       const hash = window.location.hash.replace('#', '')
-      if (['dashboard', 'colleges', 'classes', 'users', 'exams', 'announcement', 'reminder', 'codes'].includes(hash)) {
+      if (hash === 'codes') hash = 'dashboard'
+      if (['dashboard', 'colleges', 'classes', 'users', 'exams', 'announcement', 'reminder'].includes(hash)) {
         switchTab(hash)
       } else {
         switchTab('dashboard')
@@ -287,7 +283,6 @@
 
       // 按需加载特定模块
       if (tabId === 'announcement') loadAnnouncementData()
-      if (tabId === 'codes') loadCodesData()
       if (tabId === 'reminder') loadReminderData()
     }
 
@@ -295,7 +290,6 @@
       if (showTip) showToast('正在刷新当前页面数据...', 'info')
       loadAllData()
       if (currentTab === 'announcement') loadAnnouncementData()
-      if (currentTab === 'codes') loadCodesData()
       if (currentTab === 'reminder') loadReminderData()
     }
 
@@ -1140,80 +1134,6 @@
       } finally {
         btn.disabled = false
         btn.innerText = '保存并实时同步给全体小程序用户'
-      }
-    }
-
-    // 激活码管理
-    async function loadCodesData() {
-      try {
-        const res = await adminFetch('/api/admin/activation-codes')
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          const list = json.data.allList || []
-          const tbody = document.getElementById('codesTableBody')
-          if (list.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">暂无激活码</td></tr>'
-            return
-          }
-          tbody.innerHTML = list.map(c => `
-            <tr class="hover:bg-slate-50 transition">
-              <td class="py-3 px-4 font-mono font-bold text-slate-900">${escapeHtml(c.code)}</td>
-              <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${c.isUsed ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
-                  ${c.isUsed ? '已使用' : '未使用'}
-                </span>
-              </td>
-              <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(c.usedByUserRealName || '--')}</td>
-              <td class="py-3 px-4 text-slate-600">${escapeHtml(c.usedByUserClass || '--')}</td>
-              <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(c.usedByUserPhone || '--')}</td>
-              <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(c.usedAt)}</td>
-              <td class="py-3 px-4 text-right">
-                ${!c.isUsed ? `<button onclick="deleteCode('${c.code}')" class="text-rose-600 hover:text-rose-800 font-medium">删除</button>` : '--'}
-              </td>
-            </tr>
-          `).join('')
-        }
-      } catch (err) {
-        console.warn('拉取激活码失败:', err)
-      }
-    }
-
-    async function batchGenerateCodesPrompt() {
-      const countStr = prompt('请输入需要批量生成的激活码数量 (如: 10):', '10')
-      if (!countStr) return
-      const count = parseInt(countStr, 10)
-      if (isNaN(count) || count <= 0) return alert('请输入有效数字')
-      
-      const prefix = prompt('请输入激活码前缀 (默认 VIP):', 'VIP') || 'VIP'
-      try {
-        const res = await adminFetch('/api/admin/activation-codes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ count, prefix })
-        })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast(`已成功批量生成 ${count} 个激活码！`, 'success')
-          loadCodesData()
-        }
-      } catch (e) {
-        showToast('生成异常: ' + e.message, 'error')
-      }
-    }
-
-    async function deleteCode(code) {
-      if (!confirm(`确定要删除激活码 ${code} 吗？`)) return
-      try {
-        const res = await adminFetch(`/api/admin/activation-codes/${encodeURIComponent(code)}`, { method: 'DELETE' })
-        const json = await res.json()
-        if (json.code === 0) {
-          showToast('激活码已删除', 'success')
-          loadCodesData()
-        } else {
-          showToast(json.message || '删除失败', 'error')
-        }
-      } catch (e) {
-        showToast('删除失败: ' + e.message, 'error')
       }
     }
 

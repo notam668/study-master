@@ -1352,6 +1352,129 @@ code {
   }
 }
 
+
+/* ── Non-dashboard tabs: phone layout (≤991) ───────────────── */
+@media (max-width: 991.98px) {
+  .tab-content:not(#tab-dashboard) .page-header {
+    margin-bottom: 0.85rem !important;
+  }
+  .tab-content:not(#tab-dashboard) .page-header .row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.65rem;
+  }
+  .tab-content:not(#tab-dashboard) .page-header .col-auto {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .tab-content:not(#tab-dashboard) .page-title {
+    font-size: 1.2rem !important;
+    line-height: 1.35 !important;
+    letter-spacing: -0.02em;
+  }
+  .tab-content:not(#tab-dashboard) .page-header .text-secondary {
+    font-size: 0.8rem;
+    line-height: 1.45;
+  }
+
+  .tab-content:not(#tab-dashboard) .row.g-2 > [class*="col-"],
+  .tab-content:not(#tab-dashboard) .row.g-3 > [class*="col-"] {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .tab-content:not(#tab-dashboard) .card-header {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: stretch !important;
+    gap: 0.55rem !important;
+  }
+  .tab-content:not(#tab-dashboard) .card-header .form-control,
+  .tab-content:not(#tab-dashboard) .card-header .form-control-sm,
+  .tab-content:not(#tab-dashboard) .card-header .form-select {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+  }
+  .tab-content:not(#tab-dashboard) .card-header .ms-auto {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .tab-content:not(#tab-dashboard) .table-responsive {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .tab-content:not(#tab-dashboard) .table-responsive > .table {
+    min-width: 680px;
+    margin-bottom: 0;
+  }
+  .tab-content:not(#tab-dashboard) .table th,
+  .tab-content:not(#tab-dashboard) .table td {
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .tab-content:not(#tab-dashboard) .table td[colspan] {
+    white-space: normal !important;
+    text-align: center;
+    padding: 2rem 1rem !important;
+    color: var(--yx-text-muted) !important;
+  }
+
+  .tab-content:not(#tab-dashboard) .form-control,
+  .tab-content:not(#tab-dashboard) .form-select {
+    width: 100% !important;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .tab-content:not(#tab-dashboard) textarea.form-control {
+    min-height: 120px;
+  }
+  .tab-content:not(#tab-dashboard) .btn {
+    min-height: 44px;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .tab-content:not(#tab-dashboard) .btn.w-100,
+  #btnSaveAnn,
+  #collegeExportBtn {
+    width: 100% !important;
+  }
+  #btnSaveAnn {
+    white-space: normal;
+    line-height: 1.35;
+    height: auto;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+
+  #collegeOverviewCard .d-flex {
+    flex-wrap: wrap !important;
+    gap: 0.65rem !important;
+  }
+  #collegeOverviewCard h2,
+  #classOverviewCard h2 {
+    font-size: 1.2rem !important;
+    word-break: break-word;
+  }
+
+  .tab-content#tab-announcement .preview-phone {
+    width: 100%;
+    max-width: 300px;
+  }
+
+  #collegeCardsGrid > [class*="col-"] {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .navbar-vertical,
   .card, .yx-glass,

@@ -74,13 +74,7 @@
                 <span class="nav-link-title">上课提醒</span>
               </a>
             </li>
-            <li class="nav-item">
-              <a class="nav-link" href="#codes" id="nav-codes" onclick="switchTab('codes');return false;">
-                <span class="nav-link-icon"><i class="ti ti-key"></i></span>
-                <span class="nav-link-title">激活码库</span>
-              </a>
-            </li>
-          </ul>
+                      </ul>
         </div>
         <div class="sidebar-footer yx-sidebar-footer">
           <button type="button" class="btn btn-outline-primary w-100" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
@@ -113,8 +107,7 @@
             <a href="#exams" id="cap-exams" onclick="switchTab('exams');return false;">模考</a>
             <a href="#announcement" id="cap-announcement" onclick="switchTab('announcement');return false;">公告</a>
             <a href="#reminder" id="cap-reminder" onclick="switchTab('reminder');return false;">提醒</a>
-            <a href="#codes" id="cap-codes" onclick="switchTab('codes');return false;">激活码</a>
-          </nav>
+                      </nav>
           <div class="admin-header-actions">
             <button type="button" class="yx-util-btn" onclick="refreshCurrentTab(true)" title="刷新" aria-label="刷新"><i class="ti ti-refresh"></i></button>
             <button type="button" class="yx-util-btn d-none d-md-inline-flex" onclick="exportUsersCsv()" title="导出考生" aria-label="导出考生"><i class="ti ti-download"></i></button>
@@ -313,7 +306,7 @@
             </div>
             <div id="collegeStudentsPanel" class="card hidden">
               <div class="card-header">
-                <input type="text" id="collegeStudentSearchInput" class="form-control form-control-sm w-auto" placeholder="本院内搜姓名/电话/学号/班级..." oninput="filterCurrentCollegeStudents()" />
+                <input type="text" id="collegeStudentSearchInput" class="form-control form-control-sm w-100" placeholder="本院内搜姓名/电话/学号/班级..." oninput="filterCurrentCollegeStudents()" />
                 <span class="ms-auto text-secondary small" id="collegeTableCountText">--</span>
               </div>
               <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
@@ -348,7 +341,7 @@
             </div>
             <div class="card">
               <div class="card-header">
-                <input id="classStudentSearchInput" class="form-control form-control-sm w-auto" placeholder="班内搜索..." oninput="filterCurrentClassStudents()" />
+                <input id="classStudentSearchInput" class="form-control form-control-sm w-100" placeholder="班内搜索..." oninput="filterCurrentClassStudents()" />
                 <span class="ms-auto text-secondary small" id="classTableCountText">请先在上方选择班级</span>
               </div>
               <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
@@ -438,25 +431,7 @@
             </div>
           </section>
 
-          <!-- CODES (restored visible) -->
-          <section id="tab-codes" class="tab-content">
-            <div class="page-header mb-3">
-              <div class="row align-items-center">
-                <div class="col"><h2 class="page-title">模拟考试全通激活码库</h2>
-                  <div class="text-secondary">发放给学生可直接解锁无限次模拟考试考场</div></div>
-                <div class="col-auto">
-                  <button class="btn btn-primary" onclick="batchGenerateCodesPrompt()"><i class="ti ti-plus"></i> 批量生成激活码</button>
-                  <button class="btn btn-outline-secondary" onclick="exportUnusedCodes()"><i class="ti ti-download"></i> 导出未用码</button>
-                </div>
-              </div>
-            </div>
-            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm">
-              <thead><tr><th>激活码</th><th>状态</th><th>使用者</th><th>班级</th><th>电话</th><th>使用时间</th><th>操作</th></tr></thead>
-              <tbody id="codesTableBody"><tr><td colspan="7" class="text-center text-secondary py-4">正在读取激活码数据...</td></tr></tbody>
-            </table></div></div>
-          </section>
-
-        </div>
+                  </div>
       </div>
 
       <footer class="footer footer-transparent d-print-none">
