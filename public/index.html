@@ -93,10 +93,10 @@
             <button type="button" class="btn btn-primary" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
               <i class="ti ti-cloud-download" aria-hidden="true"></i><span class="yx-btn-label">从云托管同步</span>
             </button>
-            <button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">
+            <button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)" aria-label="刷新">
               <i class="ti ti-refresh" aria-hidden="true"></i><span class="yx-btn-label">刷新</span>
             </button>
-            <button type="button" class="btn btn-ghost" onclick="adminLogout()">
+            <button type="button" class="btn btn-ghost" onclick="adminLogout()" aria-label="退出">
               <i class="ti ti-logout" aria-hidden="true"></i><span class="yx-btn-label">退出</span>
             </button>
           </div>
@@ -108,148 +108,131 @@
 
           <!-- DASHBOARD -->
           <section id="tab-dashboard" class="tab-content active">
-            <h2 class="yx-dash-title">运营总览</h2>
-            <div class="yx-dash-layout">
-              <div class="yx-dash-main">
-                <div class="yx-hero-row">
-                  <div class="yx-hero-card">
-                    <div>
-                      <div class="yx-hero-label">建档考生</div>
-                      <div class="yx-hero-value" id="statTotalUsers">--</div>
-                      <div class="yx-hero-sub">完善档案 <span id="statProfileDone">--</span> · 学习事件 <span id="statTotalEvents">--</span></div>
-                    </div>
-                    <div class="yx-hero-actions">
-                      <button type="button" class="yx-pill-btn dark" onclick="switchTab('users')"><i class="ti ti-users"></i> 考生全库</button>
-                      <button type="button" class="yx-pill-btn light" onclick="syncFromCloudBaseAction()"><i class="ti ti-cloud-download"></i> 云同步</button>
-                    </div>
-                  </div>
-                  <div class="yx-side-metrics">
-                    <div class="yx-metric-card">
-                      <div class="yx-metric-label">累计模考</div>
-                      <div class="yx-metric-row">
-                        <div class="yx-metric-value" id="statTotalExams">--</div>
-                        <span class="yx-badge-up" id="statPassRateBadge">及格 <span id="statPassRate">--</span>%</span>
-                      </div>
-                      <div class="kpi-sub mt-1">练习 <span id="statTotalPractices">--</span> 次</div>
-                    </div>
-                    <div class="yx-metric-card">
-                      <div class="yx-metric-label">今日活跃</div>
-                      <div class="yx-metric-row">
-                        <div class="yx-metric-value" id="statActiveToday">--</div>
-                        <span class="yx-badge-down" id="statTodayEventsBadge">事件 <span id="statTodayEvents">--</span></span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="yx-charts-row">
-                  <div class="card yx-chart-card">
-                    <div class="yx-chart-head">
-                      <h3>模考流水趋势</h3>
-                      <span class="text-secondary small">近 7 日交卷量</span>
-                    </div>
-                    <div class="yx-chart-wrap"><canvas id="examFlowChart" aria-label="模考流水柱状图"></canvas></div>
-                  </div>
-                  <div class="card yx-chart-card">
-                    <div class="yx-chart-head">
-                      <h3>学院分布</h3>
-                      <a href="#colleges" onclick="switchTab('colleges');return false;" class="btn btn-sm btn-ghost-secondary">全部</a>
-                    </div>
-                    <div class="yx-donut-wrap">
-                      <div class="yx-donut-canvas-box">
-                        <canvas id="collegeDonutChart" aria-label="学院分布环形图"></canvas>
-                        <div class="yx-donut-center">
-                          <div class="label">学院</div>
-                          <div class="value" id="collegeDonutTotal">--</div>
-                        </div>
-                      </div>
-                      <div class="yx-legend" id="collegeDonutLegend"></div>
-                    </div>
-                    <!-- keep legacy container for JS fallback / accessibility -->
-                    <div id="dashboardCollegeRank" class="d-none"></div>
-                  </div>
-                </div>
-
-                <div class="card yx-list-card">
-                  <div class="yx-chart-head">
-                    <h3>最近模考动态</h3>
-                    <a href="#exams" onclick="switchTab('exams');return false;" class="btn btn-sm btn-ghost-secondary">流水</a>
-                  </div>
-                  <div id="recentActivityList"><div class="text-secondary small px-3 py-4 text-center">读取中...</div></div>
-                </div>
-
-                <div class="card">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <h3 class="card-title mb-0">各班考生分布</h3>
-                    <a href="#classes" onclick="switchTab('classes');return false;" class="btn btn-sm btn-ghost-secondary">班级详细</a>
-                  </div>
-                  <div class="list-group list-group-flush overflow-auto" style="max-height:280px" id="classRankList"><div class="list-group-item text-secondary">正在加载班级数据...</div></div>
-                </div>
+            <header class="yx-page-head">
+              <h2 class="yx-dash-title">运营总览</h2>
+              <p class="yx-page-desc">建档、模考、练习和今日活跃。下方图表用的是同一批运营记录。</p>
+            </header>
+            <div id="yxLoadError" class="yx-banner yx-banner-error hidden" role="alert">
+              <span id="yxLoadErrorText">运营数据没有加载成功。</span>
+              <button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">重试</button>
+            </div>
+            <div class="yx-kpi-grid" id="yxKpiGrid">
+              <article class="yx-kpi">
+                <div class="yx-kpi-label">建档考生</div>
+                <div class="yx-kpi-value" id="statTotalUsers"><span class="yx-skel yx-skel-num"></span></div>
+                <div class="yx-kpi-sub">完善档案 <span id="statProfileDone"><span class="yx-skel"></span></span> · 学习事件 <span id="statTotalEvents"><span class="yx-skel"></span></span></div>
+              </article>
+              <article class="yx-kpi">
+                <div class="yx-kpi-label">累计模考</div>
+                <div class="yx-kpi-value" id="statTotalExams"><span class="yx-skel yx-skel-num"></span></div>
+                <div class="yx-kpi-sub" id="statPassRateBadge">及格率 <span id="statPassRate"><span class="yx-skel"></span></span></div>
+              </article>
+              <article class="yx-kpi">
+                <div class="yx-kpi-label">练习次数</div>
+                <div class="yx-kpi-value" id="statTotalPractices"><span class="yx-skel yx-skel-num"></span></div>
+                <div class="yx-kpi-sub">已开始的练习</div>
+              </article>
+              <article class="yx-kpi">
+                <div class="yx-kpi-label">今日活跃</div>
+                <div class="yx-kpi-value" id="statActiveToday"><span class="yx-skel yx-skel-num"></span></div>
+                <div class="yx-kpi-sub" id="statTodayEventsBadge">今日事件 <span id="statTodayEvents"><span class="yx-skel"></span></span></div>
+              </article>
+            </div>
+            <div class="card yx-chart-card">
+              <div class="yx-chart-head">
+                <h3>模考流水趋势</h3>
+                <span class="text-secondary">近 7 日交卷量</span>
               </div>
-
-              <aside class="yx-dash-rail">
-                <div class="card yx-rail-card yx-rail-span-2">
-                  <div class="yx-rail-head">
-                    <h3>核心指标卡</h3>
-                    <button type="button" class="yx-pill-btn light" style="padding:0.35rem 0.8rem;font-size:0.75rem" onclick="switchTab('colleges')">学院 +</button>
-                  </div>
-                  <div class="yx-stack-cards" id="yxCoreKpiStack">
-                    <div class="yx-stack-card c1"><div class="k">微信官方累计</div><div class="v" id="wxOfficialTotalUsersStack">--</div></div>
-                    <div class="yx-stack-card c2"><div class="k">昨日打开</div><div class="v" id="wxOfficialSessionCntStack">--</div></div>
-                    <div class="yx-stack-card c3">
-                      <div class="k">盐小工校园通</div>
-                      <div class="v" id="wxOfficialVisitUv">--</div>
-                      <div class="s">昨日 DAU · <span id="wxOfficialPeriodText">数据周期：--</span></div>
+              <div class="yx-chart-wrap">
+                <div class="yx-chart-skel" id="examChartSkel"></div>
+                <canvas id="examFlowChart" aria-label="模考流水柱状图"></canvas>
+              </div>
+            </div>
+            <div class="yx-lower">
+              <section class="card yx-section">
+                <div class="yx-section-head">
+                  <h3>学院分布</h3>
+                  <a href="#colleges" onclick="switchTab('colleges');return false;" class="btn btn-ghost">全部</a>
+                </div>
+                <div class="yx-donut-wrap">
+                  <div class="yx-donut-canvas-box">
+                    <canvas id="collegeDonutChart" aria-label="学院分布环形图"></canvas>
+                    <div class="yx-donut-center">
+                      <div class="label">学院</div>
+                      <div class="value" id="collegeDonutTotal"><span class="yx-skel"></span></div>
                     </div>
                   </div>
-                  <div class="yx-official-mini">
-                    <div>
-                      <div class="k">官方累计用户</div>
-                      <div class="v" id="wxOfficialTotalUsers">--</div>
-                      <div class="s" id="wxOfficialTotalUsersSub"></div>
-                    </div>
-                    <div>
-                      <div class="k">昨日打开次数</div>
-                      <div class="v" id="wxOfficialSessionCnt">--</div>
-                      <div class="s" id="wxOfficialSessionCntSub"></div>
-                    </div>
-                    <div>
-                      <div class="k">昨日新增</div>
-                      <div class="v" id="wxOfficialVisitUvNew">--</div>
-                      <div class="s" id="wxOfficialVisitUvNewSub"></div>
-                    </div>
-                    <div>
-                      <div class="k">DAU 说明</div>
-                      <div class="v" style="font-size:0.85rem" id="wxOfficialVisitUvSub">--</div>
-                      <div class="s">访问人数</div>
-                    </div>
+                  <div class="yx-legend" id="collegeDonutLegend"><span class="yx-skel yx-skel-line"></span></div>
+                </div>
+                <div id="dashboardCollegeRank" class="hidden"></div>
+                <div class="yx-chip-row" id="collegeChipRow"></div>
+                <div id="collegeQuickList"><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span></div>
+              </section>
+              <section class="card yx-section">
+                <div class="yx-section-head">
+                  <h3>最近模考动态</h3>
+                  <a href="#exams" onclick="switchTab('exams');return false;" class="btn btn-ghost">流水</a>
+                </div>
+                <div id="recentActivityList">
+                  <span class="yx-skel yx-skel-line"></span>
+                  <span class="yx-skel yx-skel-line"></span>
+                  <span class="yx-skel yx-skel-line"></span>
+                </div>
+              </section>
+              <section class="card yx-section">
+                <div class="yx-section-head">
+                  <h3>各班考生分布</h3>
+                  <a href="#classes" onclick="switchTab('classes');return false;" class="btn btn-ghost">班级详细</a>
+                </div>
+                <div id="classRankList">
+                  <span class="yx-skel yx-skel-line"></span>
+                  <span class="yx-skel yx-skel-line"></span>
+                  <span class="yx-skel yx-skel-line"></span>
+                </div>
+              </section>
+              <section class="card yx-section">
+                <div class="yx-section-head">
+                  <h3>微信官方</h3>
+                  <span class="text-secondary" id="wxOfficialPeriodText">正在读取官方数据</span>
+                </div>
+                <div class="yx-official-mini">
+                  <div>
+                    <div class="k">官方累计用户</div>
+                    <div class="v" id="wxOfficialTotalUsers"><span class="yx-skel"></span></div>
+                    <div class="s" id="wxOfficialTotalUsersSub"></div>
+                  </div>
+                  <div>
+                    <div class="k">昨日打开次数</div>
+                    <div class="v" id="wxOfficialSessionCnt"><span class="yx-skel"></span></div>
+                    <div class="s" id="wxOfficialSessionCntSub"></div>
+                  </div>
+                  <div>
+                    <div class="k">昨日访问人数</div>
+                    <div class="v" id="wxOfficialVisitUv"><span class="yx-skel"></span></div>
+                    <div class="s" id="wxOfficialVisitUvSub"></div>
+                  </div>
+                  <div>
+                    <div class="k">昨日新增</div>
+                    <div class="v" id="wxOfficialVisitUvNew"><span class="yx-skel"></span></div>
+                    <div class="s" id="wxOfficialVisitUvNewSub"></div>
                   </div>
                 </div>
-
-                <div class="card yx-rail-card">
-                  <div class="yx-rail-head">
-                    <h3>云托管状态</h3>
-                    <span id="cloudStatusBadge" class="yx-status-pill ok"><span id="cloudStatusText">探活检测中...</span></span>
-                  </div>
-                  <div class="yx-status-strip">
-                    <div><div class="label">探活</div><div class="value" id="cloudPingText">检测中...</div></div>
-                    <div><div class="label">最近同步</div><div class="value" id="cloudLastSyncText">刚刚</div></div>
-                    <div><div class="label">环境</div><div class="value"><code id="cloudEnvId">prod-d0g39zvr13ada49af</code></div></div>
-                    <div><div class="label">健康入口</div><div class="value"><a target="_blank" rel="noopener" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster ↗</a></div></div>
-                  </div>
-                  <button class="btn btn-outline-primary w-100 mt-3" id="btnSyncCloudRail" onclick="syncFromCloudBaseAction()">
-                    <i class="ti ti-cloud-download me-1"></i>从云托管同步
-                  </button>
+                <span id="wxOfficialTotalUsersStack" class="hidden"></span>
+                <span id="wxOfficialSessionCntStack" class="hidden"></span>
+              </section>
+              <section class="card yx-section">
+                <div class="yx-section-head">
+                  <h3>云托管探活</h3>
+                  <span id="cloudStatusBadge" class="yx-status-pill"><span id="cloudStatusText">探活检测中</span></span>
                 </div>
-
-                <div class="card yx-rail-card">
-                  <div class="yx-rail-head">
-                    <h3>快捷学院</h3>
-                  </div>
-                  <div class="yx-chip-row" id="collegeChipRow"></div>
-                  <div id="collegeQuickList"><div class="text-secondary small py-2">加载中...</div></div>
+                <div class="yx-status-strip">
+                  <div><div class="label">探活</div><div class="value" id="cloudPingText">检测中</div></div>
+                  <div><div class="label">最近同步</div><div class="value" id="cloudLastSyncText">尚未记录</div></div>
+                  <div><div class="label">环境</div><div class="value"><code id="cloudEnvId">prod-d0g39zvr13ada49af</code></div></div>
+                  <div><div class="label">健康入口</div><div class="value"><a target="_blank" rel="noopener" href="https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com/health">studymaster</a></div></div>
                 </div>
-              </aside>
+                <button type="button" class="btn btn-primary w-100 mt-2" id="btnSyncCloudRail" onclick="syncFromCloudBaseAction()">从云托管同步</button>
+              </section>
             </div>
           </section>
 
@@ -265,11 +248,12 @@
                 </div>
               </div>
             </div>
-            <div class="row g-2 mb-3">
-              <div class="col-md-6"><input type="text" id="collegeSearchInput" class="form-control" placeholder="搜索学院..." oninput="renderCollegeCards()" /></div>
-              <div class="col-md-6"><select id="collegeSelectDropdown" class="form-select" onchange="onSelectCollegeChange()"><option value="">-- 浏览全部学院卡片，或在此选择 --</option></select></div>
+            <div class="yx-toolbar">
+              <input type="text" id="collegeSearchInput" class="form-control" placeholder="搜索学院" oninput="renderCollegeCards()" />
+              <select id="collegeSelectDropdown" class="form-select" onchange="onSelectCollegeChange()"><option value="">浏览全部学院，或在此选择</option></select>
+              <button type="button" class="btn btn-ghost" onclick="clearCollegeFilters()">清除</button>
             </div>
-            <div id="collegeCardsGrid" class="row row-cards mb-3"><div class="col-12 text-center text-secondary py-5">正在加载学院统计...</div></div>
+            <div id="collegeCardsGrid"><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span></div>
             <div id="collegeOverviewCard" class="card hidden mb-3 bg-dark text-white">
               <div class="card-body">
                 <div class="d-flex justify-content-between flex-wrap gap-2">
@@ -291,8 +275,8 @@
                 <input type="text" id="collegeStudentSearchInput" class="form-control form-control-sm w-100" placeholder="本院内搜姓名/电话/学号/班级..." oninput="filterCurrentCollegeStudents()" />
                 <span class="ms-auto text-secondary small" id="collegeTableCountText">--</span>
               </div>
-              <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
-                <thead><tr><th>姓名</th><th>电话</th><th>学号</th><th>班级</th><th>模考</th><th>最高分</th><th>档案</th></tr></thead>
+              <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name-ops">
+                <thead><tr><th>序号</th><th>姓名</th><th>班级</th><th>电话</th><th>学号</th><th>模考</th><th>最高分</th><th>档案</th><th>操作</th></tr></thead>
                 <tbody id="collegeStudentsTableBody"></tbody>
               </table></div>
             </div>
@@ -302,16 +286,21 @@
           <section id="tab-classes" class="tab-content">
             <div class="page-header mb-3"><h2 class="page-title">班级信息与考勤核对中心</h2>
               <div class="text-secondary">选择或搜索指定班级，一键查询该班所有考生信息与模考成绩</div></div>
-            <div class="row g-2 mb-3">
-              <div class="col-md-4"><label class="form-label">先按学院筛选</label>
-                <select id="classCollegeFilterSelect" class="form-select" onchange="onClassCollegeFilterChange()"><option value="all">全部学院</option></select></div>
-              <div class="col-md-5"><label class="form-label">选择班级</label>
-                <select id="classSelectDropdown" class="form-select" onchange="onSelectClassChange()"><option value="">-- 请选择班级 --</option></select></div>
-              <div class="col-md-3 d-flex align-items-end" id="classExportBtnWrapper">
-                <button class="btn btn-outline-primary w-100" onclick="exportCurrentClassCsv()"><i class="ti ti-download"></i> 导出本班</button>
+            <div class="yx-toolbar">
+              <div>
+                <label class="form-label" for="classCollegeFilterSelect">先按学院筛选</label>
+                <select id="classCollegeFilterSelect" class="form-select" onchange="onClassCollegeFilterChange()"><option value="all">全部学院</option></select>
+              </div>
+              <div>
+                <label class="form-label" for="classSelectDropdown">选择班级</label>
+                <select id="classSelectDropdown" class="form-select" onchange="onSelectClassChange()"><option value="">请选择班级</option></select>
+              </div>
+              <button type="button" class="btn btn-ghost" onclick="clearClassFilters()">清除</button>
+              <div id="classExportBtnWrapper" class="hidden">
+                <button type="button" class="btn btn-ghost" onclick="exportCurrentClassCsv()">导出本班</button>
               </div>
             </div>
-            <div id="classOverviewCard" class="card mb-3">
+            <div id="classOverviewCard" class="card hidden mb-3">
               <div class="card-body">
                 <h2 id="activeClassName">--</h2>
                 <div class="text-secondary mb-2">已登记考生共 <span id="activeClassTotal">0</span> 人，其中 <span id="activeClassCompleted">0</span> 人已完善姓名与手机号 · 档案完善率 <span id="activeClassRate">--%</span></div>
@@ -326,24 +315,31 @@
                 <input id="classStudentSearchInput" class="form-control form-control-sm w-100" placeholder="班内搜索..." oninput="filterCurrentClassStudents()" />
                 <span class="ms-auto text-secondary small" id="classTableCountText">请先在上方选择班级</span>
               </div>
-              <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+              <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name-ops">
                 <thead><tr><th>序号</th><th>真实姓名</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高得分</th><th>平均正确率</th><th>档案状态</th><th>操作</th></tr></thead>
-                <tbody id="classStudentsTableBody"><tr><td colspan="9" class="text-center text-secondary py-4">请在上方下拉菜单中选择一个班级</td></tr></tbody>
+                <tbody id="classStudentsTableBody"><tr><td colspan="9" class="yx-empty">先在上方选择学院和班级，名册会出现在这里。</td></tr></tbody>
               </table></div>
             </div>
           </section>
 
           <!-- USERS -->
           <section id="tab-users" class="tab-content">
-            <div class="page-header mb-3"><h2 class="page-title">考生全库</h2></div>
-            <div class="row g-2 mb-3">
-              <div class="col-md-5"><input id="userSearchInput" class="form-control" placeholder="搜索姓名 / 学院 / 班级 / 电话 / 学号..." oninput="handleUserSearch()" /></div>
-              <div class="col-md-3"><select id="userFilterSelect" class="form-select" onchange="handleUserSearch()"><option value="all">全部档案状态</option><option value="done">已完善</option><option value="todo">未完善</option></select></div>
-              <div class="col-md-4"><select id="userCollegeFilterSelect" class="form-select" onchange="handleUserSearch()"><option value="all">全部学院</option></select></div>
+            <div class="page-header mb-3"><h2 class="page-title">考生全库</h2>
+              <div class="text-secondary">左右滑动查看电话、学号和成绩。姓名列保持固定。</div></div>
+            <div class="yx-toolbar">
+              <input id="userSearchInput" class="form-control" placeholder="搜索姓名 / 学院 / 班级 / 电话 / 学号" oninput="handleUserSearch()" />
+              <div class="yx-filter-chips" id="userFilterChips">
+                <button type="button" class="yx-filter-chip is-on" onclick="setUserStatusFilter('all', this)">全部</button>
+                <button type="button" class="yx-filter-chip" onclick="setUserStatusFilter('done', this)">已完善</button>
+                <button type="button" class="yx-filter-chip" onclick="setUserStatusFilter('todo', this)">未完善</button>
+              </div>
+              <select id="userFilterSelect" class="yx-filter-select-proxy" aria-hidden="true" tabindex="-1" onchange="handleUserSearch()"><option value="all">全部档案状态</option><option value="done">已完善</option><option value="todo">未完善</option></select>
+              <select id="userCollegeFilterSelect" class="form-select" onchange="handleUserSearch()"><option value="all">全部学院</option></select>
+              <button type="button" class="btn btn-ghost" onclick="clearUserFilters()">清除</button>
             </div>
-            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="first-ops">
               <thead><tr><th>考生</th><th>学院</th><th>所在班级</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高分</th><th>档案状态</th><th>最近活跃</th><th>操作</th></tr></thead>
-              <tbody id="usersTableBody"><tr><td colspan="10" class="text-center text-secondary py-4">加载考生数据中...</td></tr></tbody>
+              <tbody id="usersTableBody"><tr class="yx-skel-row"><td colspan="10"><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span></td></tr></tbody>
             </table></div></div>
           </section>
 
@@ -351,9 +347,18 @@
           <section id="tab-exams" class="tab-content">
             <div class="page-header mb-3"><h2 class="page-title">全量上机模拟考试答卷流水</h2>
               <div class="text-secondary">每位考生的交卷得分、答题耗时与及格状态实时记录</div></div>
-            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+            <div class="yx-toolbar">
+              <input id="examSearchInput" class="form-control" placeholder="搜索考生 / 班级 / 科目" oninput="handleExamSearch()" />
+              <div class="yx-filter-chips" id="examFilterChips">
+                <button type="button" class="yx-filter-chip is-on" onclick="setExamStatusFilter('all', this)">全部</button>
+                <button type="button" class="yx-filter-chip" onclick="setExamStatusFilter('pass', this)">及格</button>
+                <button type="button" class="yx-filter-chip" onclick="setExamStatusFilter('fail', this)">不及格</button>
+              </div>
+              <button type="button" class="btn btn-ghost" onclick="clearExamFilters()">清除</button>
+            </div>
+            <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name">
               <thead><tr><th>交卷时间</th><th>考生姓名</th><th>班级</th><th>电话号码</th><th>试卷/科目</th><th>得分 / 满分</th><th>正确率</th><th>状态</th></tr></thead>
-              <tbody id="examsTableBody"><tr><td colspan="8" class="text-center text-secondary py-4">暂无模考答卷数据</td></tr></tbody>
+              <tbody id="examsTableBody"><tr class="yx-skel-row"><td colspan="8"><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span></td></tr></tbody>
             </table></div></div>
           </section>
 
@@ -365,10 +370,11 @@
               <div class="col-lg-7">
                 <div class="card">
                   <div class="card-body">
-                    <div class="mb-3 form-check form-switch">
-                      <input class="form-check-input" type="checkbox" id="annEnabled" />
+                    <div class="yx-switch-row">
+                      <input class="form-check-input" type="checkbox" role="switch" id="annEnabled" onchange="updateAnnouncementPreview()" />
                       <label class="form-check-label" for="annEnabled">启用开屏公告</label>
                     </div>
+                    <p id="annLoadError" class="yx-banner yx-banner-error hidden" role="alert">公告没有加载成功。<button type="button" class="btn btn-ghost" onclick="loadAnnouncementData()">重试</button></p>
                     <div class="mb-3"><label class="form-label">公告标题</label><input id="annTitle" class="form-control" oninput="updateAnnouncementPreview()" /></div>
                     <div class="mb-3"><label class="form-label">公告正文</label><textarea id="annText" class="form-control" rows="5" oninput="updateAnnouncementPreview()"></textarea></div>
                     <div class="mb-3"><label class="form-label">配图 URL（可选）</label><input id="annImage" class="form-control" oninput="updateAnnouncementPreview()" /></div>
@@ -376,19 +382,26 @@
                     <div class="mb-3"><label class="form-label">展示模式</label>
                       <select id="annShowMode" class="form-select"><option value="once_per_day">每天一次</option><option value="always">每次打开</option><option value="once">仅一次</option></select>
                     </div>
-                    <button id="btnSaveAnn" class="btn btn-primary" onclick="saveAnnouncementConfig()"><i class="ti ti-device-floppy"></i> 保存并实时同步给全体小程序用户</button>
+                    <button id="btnSaveAnn" type="button" class="btn btn-primary" onclick="saveAnnouncementConfig()">保存并同步</button>
                   </div>
                 </div>
               </div>
               <div class="col-lg-5">
                 <div class="card"><div class="card-header"><h3 class="card-title">手机预览</h3></div>
-                  <div class="card-body d-flex justify-content-center">
+                  <div class="card-body d-flex flex-column align-items-center">
                     <div class="preview-phone" id="previewCard">
-                      <div class="p-3 border-bottom bg-white"><div class="fw-bold" id="prevTitle">最新公告</div></div>
-                      <img id="prevImg" src="" alt="" class="w-100 d-none" style="max-height:160px;object-fit:cover" />
-                      <div class="p-3 small" id="prevText" style="white-space:pre-wrap"></div>
-                      <div class="p-3 text-secondary small border-top" id="prevContact"></div>
+                      <div id="prevEmpty" class="yx-preview-empty">
+                        <strong>暂无公告</strong>
+                        <p>填写标题或正文后，这里显示开屏预览。</p>
+                      </div>
+                      <div id="prevBody" class="yx-preview-sheet hidden">
+                        <div class="p-3 border-bottom"><div class="fw-bold" id="prevTitle"></div></div>
+                        <img id="prevImg" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" class="w-100 hidden" style="max-height:160px;object-fit:cover" />
+                        <div class="p-3 small" id="prevText" style="white-space:pre-wrap"></div>
+                        <div class="p-3 text-secondary small border-top" id="prevContact"></div>
+                      </div>
                     </div>
+                    <p id="prevEnabledNote">未启用时，小程序不会弹出。</p>
                   </div>
                 </div>
               </div>
@@ -403,12 +416,12 @@
               <div class="mb-3"><label class="form-label">提前提醒分钟数</label><input id="remindAheadMinutes" type="number" class="form-control" value="30" /></div>
               <div class="mb-3"><label class="form-label">低电费预警 (&lt;10度) 模板 ID (预留)</label><input id="electricityTemplateId" class="form-control" /></div>
               <div class="mb-3"><label class="form-label">财务系统 JSESSIONID（电费代查，敏感）</label><input id="financeJsessionId" class="form-control" type="password" autocomplete="off" /></div>
-              <button class="btn btn-primary" onclick="saveReminderConfig()"><i class="ti ti-device-floppy"></i> 保存提醒配置</button>
+              <button type="button" class="btn btn-primary" onclick="saveReminderConfig()">保存提醒配置</button>
             </div></div>
             <div class="card"><div class="card-header"><h3 class="card-title">下发日志</h3></div>
-              <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+              <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name">
                 <thead><tr><th>下发时间</th><th>班级</th><th>课程名称</th><th>上课时间</th><th>状态</th></tr></thead>
-                <tbody id="reminderLogsBody"><tr><td colspan="5" class="text-center text-secondary py-4">暂无下发日志</td></tr></tbody>
+                <tbody id="reminderLogsBody"><tr><td colspan="5" class="yx-empty">暂无下发日志。同学开启上课提醒并成功下发后，记录会出现在这里。</td></tr></tbody>
               </table></div>
             </div>
           </section>
@@ -443,7 +456,7 @@
 
   <div id="toast" class="alert alert-important alert-info alert-dismissible" role="alert">
     <div class="d-flex">
-      <div><span id="toastIcon">ℹ</span></div>
+      <div><span id="toastIcon" aria-hidden="true"></span></div>
       <div class="ms-2" id="toastMsg">提示</div>
     </div>
   </div>

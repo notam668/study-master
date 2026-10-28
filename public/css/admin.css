@@ -96,6 +96,17 @@ body.layout-fluid {
   background: transparent !important;
   border-bottom: 1px solid var(--color-border) !important;
   padding: 12px 16px !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center;
+  gap: 8px;
+}
+.card-header .form-control { flex: 1 1 220px; width: auto !important; }
+#classTableCountText,
+#collegeTableCountText {
+  flex: 1 1 100%;
+  margin-left: 0 !important;
+  white-space: normal;
 }
 .card-title, .card-header .card-title {
   color: var(--color-foreground) !important;
@@ -568,11 +579,12 @@ header.navbar.yx-topbar .container-xl {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 2px 8px;
+  padding: 6px 10px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.3;
   background: var(--color-muted);
-  color: var(--color-muted-fg);
+  color: #334155;
 }
 .yx-status-pill.ok { background: #ECFDF5; color: #047857; }
 .yx-status-pill.bad { background: #FEF2F2; color: #B91C1C; }
@@ -622,9 +634,10 @@ header.navbar.yx-topbar .container-xl {
 }
 .yx-metric-grid .k,
 .yx-official-mini .k,
-.yx-status-strip .label {
+.yx-status-strip .label,
+.yx-official-mini .s {
   font-size: 12px;
-  color: var(--color-muted-fg);
+  color: #334155;
 }
 .yx-metric-grid .v,
 .yx-official-mini .v,
@@ -635,8 +648,6 @@ header.navbar.yx-topbar .container-xl {
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
-.yx-official-mini .s,
-.yx-status-strip .value { font-size: 12px; color: var(--color-muted-fg); font-weight: 500; }
 .yx-status-strip .value { font-size: 13px; color: var(--color-foreground); font-weight: 600; }
 
 .yx-stack-cards {
@@ -1028,7 +1039,7 @@ a:hover { color: #4338CA; }
 .text-slate-500, .text-slate-400 { color: var(--color-muted-fg) !important; }
 .bg-slate-50, .bg-white { background: var(--color-surface) !important; }
 .border-slate-100, .border-slate-200 { border-color: var(--color-border) !important; }
-.bg-indigo-100 { background: #EEF2FF !important; color: var(--color-primary) !important; }
+.bg-indigo-100, .bg-indigo-100.text-slate-500, .bg-indigo-100.text-slate-400 { background: #EEF2FF !important; color: #3730A3 !important; }
 .text-indigo-600, .text-indigo-700, .text-violet-700 { color: var(--color-primary) !important; }
 .text-emerald-600, .text-emerald-700 { color: #047857 !important; }
 .text-rose-600, .text-rose-700 { color: var(--color-destructive) !important; }
@@ -1099,6 +1110,17 @@ a:hover { color: #4338CA; }
   }
   .form-control, .form-select { min-height: 44px; font-size: 16px; }
   .btn { min-height: 44px; }
+}
+
+@media (max-width: 720px) {
+  .yx-dense[data-sticky="first-ops"] th:last-child,
+  .yx-dense[data-sticky="first-ops"] td:last-child,
+  .yx-dense[data-sticky="name-ops"] th:last-child,
+  .yx-dense[data-sticky="name-ops"] td:last-child {
+    position: static;
+    right: auto;
+    box-shadow: none;
+  }
 }
 
 @media (max-width: 640px) {
