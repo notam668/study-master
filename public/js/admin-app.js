@@ -297,44 +297,76 @@
       if (currentTab === 'reminder') loadReminderData()
     }
 
+    function rosterMessage(colspan, message, actionHtml) {
+      return `<tr><td colspan="${colspan}" class="yx-empty">${message}${actionHtml || ''}</td></tr>`
+    }
+
+    function showRosterFailure() {
+      const banner = document.getElementById('yxLoadError')
+      if (banner) banner.classList.remove('hidden')
+      const text = document.getElementById('yxLoadErrorText')
+      if (text) text.textContent = '运营数据没有加载成功。检查网络后重试。'
+      const retry = '<button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">重试</button>'
+      const usersBody = document.getElementById('usersTableBody')
+      if (usersBody) usersBody.innerHTML = rosterMessage(10, '考生数据没有加载成功。', retry)
+      const classBody = document.getElementById('classStudentsTableBody')
+      if (classBody && !currentSelectedClass) classBody.innerHTML = rosterMessage(9, '班级名册没有加载成功。', retry)
+      const examsBody = document.getElementById('examsTableBody')
+      if (examsBody) examsBody.innerHTML = rosterMessage(8, '模考流水没有加载成功。', retry)
+      const collegeGrid = document.getElementById('collegeCardsGrid')
+      if (collegeGrid) collegeGrid.innerHTML = `<div class="yx-empty" style="padding:28px 16px;text-align:center">暂无学院数据。${retry}</div>`
+      const chartSkel = document.getElementById('examChartSkel')
+      if (chartSkel) chartSkel.classList.add('hidden')
+      const chartEmpty = document.getElementById('examChartEmpty')
+      if (chartEmpty) {
+        chartEmpty.textContent = '近 7 日交卷量还没有读到。'
+        chartEmpty.classList.remove('hidden')
+      }
+    }
+
+    function normalizeDashboardData(data) {
+      data.users = Array.isArray(data.users) ? data.users : []
+      data.allExams = Array.isArray(data.allExams) ? data.allExams : []
+      data.collegeStats = Array.isArray(data.collegeStats) ? data.collegeStats : []
+      data.classStats = Array.isArray(data.classStats) ? data.classStats : []
+      return data
+    }
+
     // 全量拉取 Dashboard 与用户数据
     async function loadAllData(isSilent = false) {
       loadCloudStatus()
       try {
         const res = await adminFetch('/api/admin/dashboard')
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          globalStats = json.data
-          renderDashboard(globalStats)
-          populateCollegeFilters(globalStats)
-          populateClassSelectOptions(globalStats)
-          renderCollegeCards()
-          handleUserSearch()
-          handleExamSearch()
+        let json = null
+        try { json = await res.json() } catch (_) { json = null }
+        if (!res.ok || !json || json.code !== 0 || !json.data) {
+          if (!isSilent) showRosterFailure()
+          return
+        }
+        globalStats = normalizeDashboardData(json.data)
+        const banner = document.getElementById('yxLoadError')
+        if (banner) banner.classList.add('hidden')
+        renderDashboard(globalStats)
+        populateCollegeFilters(globalStats)
+        populateClassSelectOptions(globalStats)
+        renderCollegeCards()
+        handleUserSearch()
+        handleExamSearch()
+        if (!currentSelectedClass) {
+          const classBody = document.getElementById('classStudentsTableBody')
+          if (classBody) classBody.innerHTML = rosterMessage(9, '先在上方选择学院和班级，名册会出现在这里。')
+        }
 
-          // refresh class/college detail if selected
-          if (currentSelectedClass) {
-            renderCurrentClassDetails(currentSelectedClass)
-          }
-          if (currentSelectedCollege) {
-            renderCurrentCollegeDetails(currentSelectedCollege)
-          }
+        if (currentSelectedClass) {
+          renderCurrentClassDetails(currentSelectedClass)
+        }
+        if (currentSelectedCollege) {
+          renderCurrentCollegeDetails(currentSelectedCollege)
         }
       } catch (err) {
         if (!isSilent) {
           console.error('拉取大屏数据失败:', err)
-          if (!(err && err.message === '未授权')) {
-            const banner = document.getElementById('yxLoadError')
-            if (banner) banner.classList.remove('hidden')
-            const text = document.getElementById('yxLoadErrorText')
-            if (text) text.textContent = '运营数据没有加载成功。检查网络后重试。'
-            if (!globalStats) {
-              const usersBody = document.getElementById('usersTableBody')
-              if (usersBody) usersBody.innerHTML = '<tr><td colspan="10" class="yx-empty">考生数据加载失败。<button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">重试</button></td></tr>'
-              const examsBody = document.getElementById('examsTableBody')
-              if (examsBody) examsBody.innerHTML = '<tr><td colspan="8" class="yx-empty">模考流水加载失败。<button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">重试</button></td></tr>'
-            }
-          }
+          if (!(err && err.message === '未授权')) showRosterFailure()
         }
       }
     }
@@ -538,8 +570,23 @@
     }
 
     function renderDashboardCharts(data) {
-      if (typeof Chart === 'undefined') return
+      const chartSkel = document.getElementById('examChartSkel')
+      if (chartSkel) chartSkel.classList.add('hidden')
+      if (typeof Chart === 'undefined') {
+        const missing = document.getElementById('examChartEmpty')
+        if (missing) {
+          missing.textContent = '趋势图没有载入。'
+          missing.classList.remove('hidden')
+        }
+        return
+      }
       const flow = buildLast7DayExamCounts(data.allExams || [])
+      const flowTotal = flow.values.reduce((sum, n) => sum + n, 0)
+      const chartEmpty = document.getElementById('examChartEmpty')
+      if (chartEmpty) {
+        chartEmpty.textContent = '近 7 日还没有交卷。有答卷后，柱子会按天出现在坐标上。'
+        chartEmpty.classList.toggle('hidden', flowTotal > 0)
+      }
       const barCanvas = document.getElementById('examFlowChart')
       if (barCanvas) {
         if (examFlowChartInst) examFlowChartInst.destroy()
@@ -586,6 +633,7 @@
               },
               y: {
                 beginAtZero: true,
+                suggestedMax: flowTotal > 0 ? undefined : 4,
                 grid: { color: '#E2E8F0' },
                 ticks: { color: '#64748B', precision: 0, font: { size: 11 } },
                 border: { display: false }
@@ -731,13 +779,18 @@
 
     function renderCollegeCards() {
       if (!globalStats) return
+      const all = Array.isArray(globalStats.collegeStats) ? globalStats.collegeStats : []
       const q = ((document.getElementById('collegeSearchInput') || {}).value || '').trim().toLowerCase()
-      let list = globalStats.collegeStats || []
+      let list = all
       if (q) list = list.filter(c => (c.college || '').toLowerCase().includes(q))
       const grid = document.getElementById('collegeCardsGrid')
       if (!grid) return
       if (!list.length) {
-        grid.innerHTML = '<div class="yx-empty" style="padding:28px 16px;text-align:center">没有匹配的学院。<button type="button" class="btn btn-ghost" onclick="clearCollegeFilters()">清除筛选</button></div>'
+        if (!q && !all.length) {
+          grid.innerHTML = '<div class="yx-empty" style="padding:28px 16px;text-align:center">暂无学院数据</div>'
+        } else {
+          grid.innerHTML = '<div class="yx-empty" style="padding:28px 16px;text-align:center">没有匹配的学院。<button type="button" class="btn btn-ghost" onclick="clearCollegeFilters()">清除筛选</button></div>'
+        }
         return
       }
       grid.innerHTML = list.map(c => {
@@ -810,14 +863,14 @@
       tbody.innerHTML = students.map((u, idx) => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(u.realName || u.nickname || '未登记')}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">${escapeHtml(u.realName || u.nickname || '未登记')}</td>
           <td class="py-3 px-4"><span onclick="jumpToClassQuery('${escapeHtml(u.className || '')}')" class="text-indigo-600 hover:underline cursor-pointer">${escapeHtml(u.className || '--')}</span></td>
           <td class="py-3 px-4 font-mono">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
           <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(u.studentId || '--')}</td>
           <td class="py-3 px-4">${u.examCount || 0}</td>
           <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0}</td>
           <td class="py-3 px-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">${u.isProfileCompleted ? '已完善' : '待完善'}</span></td>
-          <td class="py-3 px-4 text-right"><button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">详情</button></td>
+          <td class="py-3 px-4 text-right yx-sticky-ops"><button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">详情</button></td>
         </tr>
       `).join('')
     }
@@ -943,7 +996,7 @@
       tbody.innerHTML = students.map((u, idx) => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">
             <div class="flex items-center space-x-2">
               <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
                 ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
@@ -961,7 +1014,7 @@
               ${u.isProfileCompleted ? '已完善' : '待完善'}
             </span>
           </td>
-          <td class="py-3 px-4 text-right">
+          <td class="py-3 px-4 text-right yx-sticky-ops">
             <button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">查看档案</button>
           </td>
         </tr>
@@ -995,16 +1048,20 @@
     }
 
     // 渲染全校考生名册表格
-    function renderUsersTable(users) {
+    function renderUsersTable(users, opts) {
       const tbody = document.getElementById('usersTableBody')
+      if (!tbody) return
+      const filtered = opts && opts.filtered
       if (!users || users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="yx-empty">没有符合条件的考生。<button type="button" class="btn btn-ghost" onclick="clearUserFilters()">清除筛选</button></td></tr>'
+        tbody.innerHTML = filtered
+          ? rosterMessage(10, '没有符合条件的考生。', '<button type="button" class="btn btn-ghost" onclick="clearUserFilters()">清除筛选</button>')
+          : rosterMessage(10, '考生全库还是空的。从云托管同步后，建档考生会出现在这里。')
         return
       }
 
       tbody.innerHTML = users.map(u => `
         <tr class="hover:bg-slate-50 transition">
-          <td class="py-3 px-4 font-semibold text-slate-900">
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">
             <div class="flex items-center space-x-2">
               <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
                 ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
@@ -1028,7 +1085,7 @@
             </span>
           </td>
           <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(u.lastLoginAt || u.createdAt)}</td>
-          <td class="py-3 px-4 text-right">
+          <td class="py-3 px-4 text-right yx-sticky-ops">
             <button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">详情</button>
           </td>
         </tr>
@@ -1037,12 +1094,13 @@
 
     // 搜索全校考生
     function handleUserSearch() {
-      if (!globalStats || !globalStats.users) return
+      if (!globalStats) return
+      const source = Array.isArray(globalStats.users) ? globalStats.users : []
       const keyword = (document.getElementById('userSearchInput').value || '').trim().toLowerCase()
       const filter = document.getElementById('userFilterSelect').value
       const collegeEl = document.getElementById('userCollegeFilterSelect')
       const collegeFilter = collegeEl ? collegeEl.value : 'all'
-      let filtered = globalStats.users
+      let filtered = source
       if (filter === 'done' || filter === 'completed') filtered = filtered.filter(u => u.isProfileCompleted)
       if (filter === 'todo' || filter === 'pending') filtered = filtered.filter(u => !u.isProfileCompleted)
       if (collegeFilter && collegeFilter !== 'all') {
@@ -1057,7 +1115,7 @@
           (u.studentId && String(u.studentId).includes(keyword))
         )
       }
-      renderUsersTable(filtered)
+      renderUsersTable(filtered, { filtered: Boolean(keyword) || (filter && filter !== 'all') || (collegeFilter && collegeFilter !== 'all') })
     }
 
     // 渲染考试记录
@@ -1071,7 +1129,7 @@
       tbody.innerHTML = exams.map(e => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 text-slate-500">${formatTime(e.createdAt)}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(e.realName || '--')}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">${escapeHtml(e.realName || '--')}</td>
           <td class="py-3 px-4 text-slate-600">${escapeHtml(e.className || '--')}</td>
           <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(e.phone || '--')}</td>
           <td class="py-3 px-4">${escapeHtml(e.bankTitle || '默认题库')}</td>

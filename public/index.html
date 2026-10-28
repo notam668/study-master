@@ -80,14 +80,12 @@
     </aside>
 
     <div class="page-wrapper">
-      <header class="navbar navbar-expand-md d-print-none yx-topbar">
+      <header class="navbar navbar-expand-md d-print-none yx-topbar" aria-label="盐小工校园通">
         <div class="container-xl">
           <div class="d-flex align-items-center gap-2 min-w-0 yx-topbar-brand">
             <button type="button" class="yx-menu-btn" id="yxMenuBtn" onclick="toggleAdminDrawer()" aria-label="打开菜单" aria-controls="yxSidebar" aria-expanded="false">
               <i class="ti ti-menu-2" style="font-size:1.25rem"></i>
             </button>
-            <span class="yx-mark" aria-hidden="true">盐</span>
-            <div class="yx-topbar-title">盐小工校园通</div>
           </div>
           <div class="admin-header-actions">
             <button type="button" class="btn btn-primary" id="btnSyncCloud" onclick="syncFromCloudBaseAction()">
@@ -146,6 +144,7 @@
               <div class="yx-chart-wrap">
                 <div class="yx-chart-skel" id="examChartSkel"></div>
                 <canvas id="examFlowChart" aria-label="模考流水柱状图"></canvas>
+                <p id="examChartEmpty" class="yx-chart-empty hidden">近 7 日还没有交卷。有答卷后，柱子会按天出现在坐标上。</p>
               </div>
             </div>
             <div class="yx-lower">
@@ -276,7 +275,7 @@
                 <span class="ms-auto text-secondary small" id="collegeTableCountText">--</span>
               </div>
               <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name-ops">
-                <thead><tr><th>序号</th><th>姓名</th><th>班级</th><th>电话</th><th>学号</th><th>模考</th><th>最高分</th><th>档案</th><th>操作</th></tr></thead>
+                <thead><tr><th>序号</th><th class="yx-sticky-id">姓名</th><th>班级</th><th>电话</th><th>学号</th><th>模考</th><th>最高分</th><th>档案</th><th class="yx-sticky-ops">操作</th></tr></thead>
                 <tbody id="collegeStudentsTableBody"></tbody>
               </table></div>
             </div>
@@ -316,7 +315,7 @@
                 <span class="ms-auto text-secondary small" id="classTableCountText">请先在上方选择班级</span>
               </div>
               <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name-ops">
-                <thead><tr><th>序号</th><th>真实姓名</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高得分</th><th>平均正确率</th><th>档案状态</th><th>操作</th></tr></thead>
+                <thead><tr><th>序号</th><th class="yx-sticky-id">真实姓名</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高得分</th><th>平均正确率</th><th>档案状态</th><th class="yx-sticky-ops">操作</th></tr></thead>
                 <tbody id="classStudentsTableBody"><tr><td colspan="9" class="yx-empty">先在上方选择学院和班级，名册会出现在这里。</td></tr></tbody>
               </table></div>
             </div>
@@ -338,7 +337,7 @@
               <button type="button" class="btn btn-ghost" onclick="clearUserFilters()">清除</button>
             </div>
             <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="first-ops">
-              <thead><tr><th>考生</th><th>学院</th><th>所在班级</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高分</th><th>档案状态</th><th>最近活跃</th><th>操作</th></tr></thead>
+              <thead><tr><th class="yx-sticky-id">考生</th><th>学院</th><th>所在班级</th><th>电话号码</th><th>学号</th><th>模考次数</th><th>最高分</th><th>档案状态</th><th>最近活跃</th><th class="yx-sticky-ops">操作</th></tr></thead>
               <tbody id="usersTableBody"><tr class="yx-skel-row"><td colspan="10"><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span></td></tr></tbody>
             </table></div></div>
           </section>
@@ -357,7 +356,7 @@
               <button type="button" class="btn btn-ghost" onclick="clearExamFilters()">清除</button>
             </div>
             <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name">
-              <thead><tr><th>交卷时间</th><th>考生姓名</th><th>班级</th><th>电话号码</th><th>试卷/科目</th><th>得分 / 满分</th><th>正确率</th><th>状态</th></tr></thead>
+              <thead><tr><th>交卷时间</th><th class="yx-sticky-id">考生姓名</th><th>班级</th><th>电话号码</th><th>试卷/科目</th><th>得分 / 满分</th><th>正确率</th><th>状态</th></tr></thead>
               <tbody id="examsTableBody"><tr class="yx-skel-row"><td colspan="8"><span class="yx-skel yx-skel-line"></span><span class="yx-skel yx-skel-line"></span></td></tr></tbody>
             </table></div></div>
           </section>
@@ -422,7 +421,7 @@
             </div></div>
             <div class="card"><div class="card-header"><h3 class="card-title">下发日志</h3></div>
               <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense" data-sticky="name">
-                <thead><tr><th>下发时间</th><th>班级</th><th>课程名称</th><th>上课时间</th><th>状态</th></tr></thead>
+                <thead><tr><th>下发时间</th><th class="yx-sticky-id">班级</th><th>课程名称</th><th>上课时间</th><th>状态</th></tr></thead>
                 <tbody id="reminderLogsBody"><tr><td colspan="5" class="yx-empty">暂无下发日志。同学开启上课提醒并成功下发后，记录会出现在这里。</td></tr></tbody>
               </table></div>
             </div>
