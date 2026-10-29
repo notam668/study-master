@@ -111,8 +111,10 @@
           errBox.classList.remove('hidden', 'd-none')
           errBox.style.display = 'block'
         }
+        if (input) input.classList.add('is-invalid')
         return
       }
+      if (input) input.classList.remove('is-invalid')
 
       if (btn) {
         btn.disabled = true
@@ -138,6 +140,7 @@
             errBox.classList.remove('hidden', 'd-none')
             errBox.style.display = 'block'
           }
+          if (input) input.classList.add('is-invalid')
         }
       } catch (err) {
         if (errBox) {
@@ -145,6 +148,7 @@
           errBox.classList.remove('hidden', 'd-none')
           errBox.style.display = 'block'
         }
+        if (input) input.classList.add('is-invalid')
       } finally {
         if (btn) {
           btn.disabled = false
@@ -293,31 +297,90 @@
       if (currentTab === 'reminder') loadReminderData()
     }
 
+    function rosterMessage(colspan, message, actionHtml) {
+      return `<tr><td colspan="${colspan}" class="yx-empty">${message}${actionHtml || ''}</td></tr>`
+    }
+
+    function showRosterFailure() {
+      const banner = document.getElementById('yxLoadError')
+      if (banner) banner.classList.remove('hidden')
+      const text = document.getElementById('yxLoadErrorText')
+      if (text) text.textContent = '运营数据没有加载成功。检查网络后重试。'
+      const retry = '<button type="button" class="btn btn-ghost" onclick="refreshCurrentTab(true)">重试</button>'
+      const usersBody = document.getElementById('usersTableBody')
+      if (usersBody) usersBody.innerHTML = rosterMessage(10, '考生数据没有加载成功。', retry)
+      const classBody = document.getElementById('classStudentsTableBody')
+      if (classBody && !currentSelectedClass) classBody.innerHTML = rosterMessage(9, '班级名册没有加载成功。', retry)
+      const examsBody = document.getElementById('examsTableBody')
+      if (examsBody) examsBody.innerHTML = rosterMessage(8, '模考流水没有加载成功。', retry)
+      const collegeGrid = document.getElementById('collegeCardsGrid')
+      if (collegeGrid) collegeGrid.innerHTML = `<div class="yx-empty" style="padding:28px 16px;text-align:center">暂无学院数据。${retry}</div>`
+      const chartSkel = document.getElementById('examChartSkel')
+      if (chartSkel) chartSkel.classList.add('hidden')
+      const chartEmpty = document.getElementById('examChartEmpty')
+      if (chartEmpty) {
+        chartEmpty.textContent = '近 7 日交卷量还没有读到。'
+        chartEmpty.classList.remove('hidden')
+      }
+    }
+
+    function completedRateForClass(className, users) {
+      const name = String(className || '').trim()
+      const list = (users || []).filter(u => (u.className || '').trim() === name)
+      if (!list.length) return null
+      const done = list.filter(u => u.isProfileCompleted).length
+      return Math.round((done / list.length) * 100)
+    }
+
+    function normalizeDashboardData(data) {
+      data.users = Array.isArray(data.users) ? data.users : []
+      data.allExams = Array.isArray(data.allExams) ? data.allExams : []
+      data.collegeStats = Array.isArray(data.collegeStats) ? data.collegeStats : []
+      data.classStats = Array.isArray(data.classStats) ? data.classStats : []
+      data.classStats = data.classStats.map((c) => {
+        const rate = completedRateForClass(c.className, data.users)
+        if (rate == null) return c
+        return Object.assign({}, c, { completedRate: rate })
+      })
+      return data
+    }
+
     // 全量拉取 Dashboard 与用户数据
     async function loadAllData(isSilent = false) {
       loadCloudStatus()
       try {
         const res = await adminFetch('/api/admin/dashboard')
-        const json = await res.json()
-        if (json.code === 0 && json.data) {
-          globalStats = json.data
-          renderDashboard(globalStats)
-          populateCollegeFilters(globalStats)
-          populateClassSelectOptions(globalStats)
-          renderCollegeCards()
-          handleUserSearch()
-          renderExamsTable(globalStats.allExams || [])
+        let json = null
+        try { json = await res.json() } catch (_) { json = null }
+        if (!res.ok || !json || json.code !== 0 || !json.data) {
+          if (!isSilent) showRosterFailure()
+          return
+        }
+        globalStats = normalizeDashboardData(json.data)
+        const banner = document.getElementById('yxLoadError')
+        if (banner) banner.classList.add('hidden')
+        renderDashboard(globalStats)
+        populateCollegeFilters(globalStats)
+        populateClassSelectOptions(globalStats)
+        renderCollegeCards()
+        handleUserSearch()
+        handleExamSearch()
+        if (!currentSelectedClass) {
+          const classBody = document.getElementById('classStudentsTableBody')
+          if (classBody) classBody.innerHTML = rosterMessage(9, '先在上方选择学院和班级，名册会出现在这里。')
+        }
 
-          // refresh class/college detail if selected
-          if (currentSelectedClass) {
-            renderCurrentClassDetails(currentSelectedClass)
-          }
-          if (currentSelectedCollege) {
-            renderCurrentCollegeDetails(currentSelectedCollege)
-          }
+        if (currentSelectedClass) {
+          renderCurrentClassDetails(currentSelectedClass)
+        }
+        if (currentSelectedCollege) {
+          renderCurrentCollegeDetails(currentSelectedCollege)
         }
       } catch (err) {
-        if (!isSilent) console.error('拉取大屏数据失败:', err)
+        if (!isSilent) {
+          console.error('拉取大屏数据失败:', err)
+          if (!(err && err.message === '未授权')) showRosterFailure()
+        }
       }
     }
 
@@ -361,6 +424,10 @@
 
     // 渲染总览大屏
     function renderDashboard(data) {
+      const loadErr = document.getElementById('yxLoadError')
+      if (loadErr) loadErr.classList.add('hidden')
+      const chartSkel = document.getElementById('examChartSkel')
+      if (chartSkel) chartSkel.classList.add('hidden')
       const ov = data.overview || {}
       document.getElementById('statTotalUsers').innerText = (ov.totalUsers || (data.users ? data.users.length : 0)).toLocaleString()
       document.getElementById('statProfileDone').innerText = (ov.completedProfiles || 0).toLocaleString()
@@ -414,6 +481,13 @@
         if (newSubEl) {
           newSubEl.innerHTML = `<span>昨日分享转发 ${wx.sharePv || 0} 次 (${wx.shareUv || 0}人)</span>`
         }
+      } else {
+        const periodEl = document.getElementById('wxOfficialPeriodText')
+        if (periodEl) periodEl.textContent = '暂无微信官方数据'
+        ;['wxOfficialTotalUsers', 'wxOfficialSessionCnt', 'wxOfficialVisitUv', 'wxOfficialVisitUvNew', 'wxOfficialTotalUsersStack', 'wxOfficialSessionCntStack'].forEach((id) => {
+          const el = document.getElementById(id)
+          if (el) el.textContent = '暂无'
+        })
       }
 
       renderDashboardCollegeRank(data)
@@ -471,7 +545,8 @@
       const todayEv = Number((data.overview || {}).todayEvents || 0)
       const todayBadge = document.getElementById('statTodayEventsBadge')
       if (todayBadge) {
-        todayBadge.className = todayEv > 0 ? 'yx-badge-up' : 'yx-badge-down'
+        todayBadge.classList.remove('yx-badge-up', 'yx-badge-down')
+        todayBadge.classList.add(todayEv > 0 ? 'yx-badge-up' : 'yx-badge-down')
       }
 
       renderDashboardCharts(data)
@@ -480,7 +555,7 @@
 
     let examFlowChartInst = null
     let collegeDonutChartInst = null
-    const YX_CHART_COLORS = ['#a78bfa', '#c8f542', '#5ef0d0', '#fb7185', '#fb923c', '#60a5fa', '#f472b6', '#34d399']
+    const YX_CHART_COLORS = ['#4F46E5', '#6366F1', '#818CF8', '#059669', '#D97706', '#DC2626', '#64748B', '#0F172A']
 
     function buildLast7DayExamCounts(exams) {
       const days = []
@@ -508,8 +583,23 @@
     }
 
     function renderDashboardCharts(data) {
-      if (typeof Chart === 'undefined') return
+      const chartSkel = document.getElementById('examChartSkel')
+      if (chartSkel) chartSkel.classList.add('hidden')
+      if (typeof Chart === 'undefined') {
+        const missing = document.getElementById('examChartEmpty')
+        if (missing) {
+          missing.textContent = '趋势图没有载入。'
+          missing.classList.remove('hidden')
+        }
+        return
+      }
       const flow = buildLast7DayExamCounts(data.allExams || [])
+      const flowTotal = flow.values.reduce((sum, n) => sum + n, 0)
+      const chartEmpty = document.getElementById('examChartEmpty')
+      if (chartEmpty) {
+        chartEmpty.textContent = '近 7 日还没有交卷。有答卷后，柱子会按天出现在坐标上。'
+        chartEmpty.classList.toggle('hidden', flowTotal > 0)
+      }
       const barCanvas = document.getElementById('examFlowChart')
       if (barCanvas) {
         if (examFlowChartInst) examFlowChartInst.destroy()
@@ -520,17 +610,15 @@
             datasets: [{
               label: '交卷数',
               data: flow.values,
-              borderRadius: 14,
+              borderRadius: 6,
               borderSkipped: false,
               backgroundColor: (ctx) => {
                 const i = ctx.dataIndex
                 const max = Math.max(...flow.values, 1)
                 const v = flow.values[i] || 0
-                return v === max && v > 0
-                  ? 'rgba(167, 139, 250, 0.95)'
-                  : 'rgba(255, 255, 255, 0.12)'
+                return v === max && v > 0 ? '#4F46E5' : '#C7D2FE'
               },
-              hoverBackgroundColor: 'rgba(196, 181, 253, 0.95)'
+              hoverBackgroundColor: '#4338CA'
             }]
           },
           options: {
@@ -539,11 +627,11 @@
             plugins: {
               legend: { display: false },
               tooltip: {
-                backgroundColor: 'rgba(18,20,28,0.92)',
+                backgroundColor: '#0F172A',
                 titleColor: '#fff',
-                bodyColor: '#c4b5fd',
+                bodyColor: '#E0E7FF',
                 padding: 10,
-                cornerRadius: 12,
+                cornerRadius: 8,
                 displayColors: false,
                 callbacks: {
                   label: (c) => `${c.parsed.y} 份答卷`
@@ -553,13 +641,14 @@
             scales: {
               x: {
                 grid: { display: false },
-                ticks: { color: '#6b7280', font: { size: 11, weight: '600' } },
+                ticks: { color: '#64748B', font: { size: 11, weight: '600' } },
                 border: { display: false }
               },
               y: {
                 beginAtZero: true,
-                grid: { color: 'rgba(255,255,255,0.06)' },
-                ticks: { color: '#6b7280', precision: 0, font: { size: 11 } },
+                suggestedMax: flowTotal > 0 ? undefined : 4,
+                grid: { color: '#E2E8F0' },
+                ticks: { color: '#64748B', precision: 0, font: { size: 11 } },
                 border: { display: false }
               }
             }
@@ -606,11 +695,11 @@
             plugins: {
               legend: { display: false },
               tooltip: {
-                backgroundColor: 'rgba(18,20,28,0.92)',
+                backgroundColor: '#0F172A',
                 titleColor: '#fff',
-                bodyColor: '#c4b5fd',
+                bodyColor: '#E0E7FF',
                 padding: 10,
-                cornerRadius: 12
+                cornerRadius: 8
               }
             }
           }
@@ -625,7 +714,7 @@
       if (chips) {
         chips.innerHTML = list.map((c, i) => {
           const short = (c.college || '').slice(0, 1) || '院'
-          return `<button type="button" class="yx-chip" style="background:linear-gradient(135deg, ${YX_CHART_COLORS[i % YX_CHART_COLORS.length]}, #5ef0d0)" title="${escapeHtml(c.college)}" onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')">${escapeHtml(short)}</button>`
+          return `<button type="button" class="yx-chip" title="${escapeHtml(c.college)}" onclick="jumpToCollegeQuery('${escapeHtml(c.college)}')">${escapeHtml(c.college)}</button>`
         }).join('') || ''
       }
       if (quick) {
@@ -703,13 +792,18 @@
 
     function renderCollegeCards() {
       if (!globalStats) return
+      const all = Array.isArray(globalStats.collegeStats) ? globalStats.collegeStats : []
       const q = ((document.getElementById('collegeSearchInput') || {}).value || '').trim().toLowerCase()
-      let list = globalStats.collegeStats || []
+      let list = all
       if (q) list = list.filter(c => (c.college || '').toLowerCase().includes(q))
       const grid = document.getElementById('collegeCardsGrid')
       if (!grid) return
       if (!list.length) {
-        grid.innerHTML = '<div class="col-span-full text-center text-slate-400 text-xs py-10">没有匹配的学院</div>'
+        if (!q && !all.length) {
+          grid.innerHTML = '<div class="yx-empty" style="padding:28px 16px;text-align:center">暂无学院数据</div>'
+        } else {
+          grid.innerHTML = '<div class="yx-empty" style="padding:28px 16px;text-align:center">没有匹配的学院。<button type="button" class="btn btn-ghost" onclick="clearCollegeFilters()">清除筛选</button></div>'
+        }
         return
       }
       grid.innerHTML = list.map(c => {
@@ -782,14 +876,14 @@
       tbody.innerHTML = students.map((u, idx) => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(u.realName || u.nickname || '未登记')}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">${escapeHtml(u.realName || u.nickname || '未登记')}</td>
           <td class="py-3 px-4"><span onclick="jumpToClassQuery('${escapeHtml(u.className || '')}')" class="text-indigo-600 hover:underline cursor-pointer">${escapeHtml(u.className || '--')}</span></td>
           <td class="py-3 px-4 font-mono">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
           <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(u.studentId || '--')}</td>
           <td class="py-3 px-4">${u.examCount || 0}</td>
           <td class="py-3 px-4 font-bold ${u.maxScore >= 60 ? 'text-emerald-600' : 'text-slate-600'}">${u.maxScore || 0}</td>
           <td class="py-3 px-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.isProfileCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">${u.isProfileCompleted ? '已完善' : '待完善'}</span></td>
-          <td class="py-3 px-4 text-right"><button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">详情</button></td>
+          <td class="py-3 px-4 text-right yx-sticky-ops"><button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">详情</button></td>
         </tr>
       `).join('')
     }
@@ -840,7 +934,9 @@
       }
       let optionsHtml = '<option value="">-- 请选择需要查询的班级 (共 ' + classList.length + ' 个班级) --</option>'
       classList.forEach(c => {
-        optionsHtml += `<option value="${escapeHtml(c.className)}">${escapeHtml(c.className)} (${c.studentCount}人 · 档案完善率 ${c.completedRate || 0}%)</option>`
+        const rate = completedRateForClass(c.className, (data && data.users) || [])
+        const shown = rate == null ? (c.completedRate || 0) : rate
+        optionsHtml += `<option value="${escapeHtml(c.className)}">${escapeHtml(c.className)} (${c.studentCount}人 · 档案完善率 ${shown}%)</option>`
       })
       select.innerHTML = optionsHtml
       if (currentVal) select.value = currentVal
@@ -874,14 +970,7 @@
         overviewCard.classList.add('hidden')
         exportBtnWrapper.classList.add('hidden')
         countText.innerText = '请先在上方选择班级'
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="9" class="py-12 text-center text-slate-400">
-              <div class="text-2xl mb-1">🔍</div>
-              <div>请在上方下拉菜单中选择一个班级以查看其全体同学信息</div>
-            </td>
-          </tr>
-        `
+        tbody.innerHTML = '<tr><td colspan="9" class="yx-empty">先在上方选择学院和班级，名册会出现在这里。</td></tr>'
         return
       }
 
@@ -922,12 +1011,10 @@
       tbody.innerHTML = students.map((u, idx) => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 font-mono text-slate-400">${idx + 1}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">
-            <div class="flex items-center space-x-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
-              </div>
-              <span>${escapeHtml(u.realName || u.nickname || '未登记姓名')}</span>
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">
+            <div class="yx-id-row">
+              <span class="yx-id-mark">${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}</span>
+              <span class="yx-id-name">${escapeHtml(u.realName || u.nickname || '未登记姓名')}</span>
             </div>
           </td>
           <td class="py-3 px-4 font-mono font-semibold text-slate-700">${escapeHtml(u.displayPhone || u.phone || '--')}</td>
@@ -940,8 +1027,8 @@
               ${u.isProfileCompleted ? '已完善' : '待完善'}
             </span>
           </td>
-          <td class="py-3 px-4 text-right">
-            <button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">查看档案</button>
+          <td class="py-3 px-4 text-right yx-sticky-ops">
+            <button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">查看档案</button>
           </td>
         </tr>
       `).join('')
@@ -974,21 +1061,23 @@
     }
 
     // 渲染全校考生名册表格
-    function renderUsersTable(users) {
+    function renderUsersTable(users, opts) {
       const tbody = document.getElementById('usersTableBody')
+      if (!tbody) return
+      const filtered = opts && opts.filtered
       if (!users || users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-slate-400">名册暂无匹配考生</td></tr>'
+        tbody.innerHTML = filtered
+          ? rosterMessage(10, '没有符合条件的考生。', '<button type="button" class="btn btn-ghost" onclick="clearUserFilters()">清除筛选</button>')
+          : rosterMessage(10, '考生全库还是空的。从云托管同步后，建档考生会出现在这里。')
         return
       }
 
       tbody.innerHTML = users.map(u => `
         <tr class="hover:bg-slate-50 transition">
-          <td class="py-3 px-4 font-semibold text-slate-900">
-            <div class="flex items-center space-x-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                ${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}
-              </div>
-              <span>${escapeHtml(u.realName || u.nickname || '未登记')}</span>
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">
+            <div class="yx-id-row">
+              <span class="yx-id-mark">${escapeHtml((u.realName && u.realName[0]) || (u.nickname && u.nickname[0]) || '考')}</span>
+              <span class="yx-id-name">${escapeHtml(u.realName || u.nickname || '未登记')}</span>
             </div>
           </td>
           <td class="py-3 px-4">
@@ -1007,8 +1096,8 @@
             </span>
           </td>
           <td class="py-3 px-4 text-slate-400 text-[11px]">${formatTime(u.lastLoginAt || u.createdAt)}</td>
-          <td class="py-3 px-4 text-right">
-            <button onclick="showUserDetailModal('${u.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs">详情</button>
+          <td class="py-3 px-4 text-right yx-sticky-ops">
+            <button type="button" onclick="showUserDetailModal('${u.id}')" class="yx-row-btn">详情</button>
           </td>
         </tr>
       `).join('')
@@ -1016,12 +1105,13 @@
 
     // 搜索全校考生
     function handleUserSearch() {
-      if (!globalStats || !globalStats.users) return
+      if (!globalStats) return
+      const source = Array.isArray(globalStats.users) ? globalStats.users : []
       const keyword = (document.getElementById('userSearchInput').value || '').trim().toLowerCase()
       const filter = document.getElementById('userFilterSelect').value
       const collegeEl = document.getElementById('userCollegeFilterSelect')
       const collegeFilter = collegeEl ? collegeEl.value : 'all'
-      let filtered = globalStats.users
+      let filtered = source
       if (filter === 'done' || filter === 'completed') filtered = filtered.filter(u => u.isProfileCompleted)
       if (filter === 'todo' || filter === 'pending') filtered = filtered.filter(u => !u.isProfileCompleted)
       if (collegeFilter && collegeFilter !== 'all') {
@@ -1036,21 +1126,21 @@
           (u.studentId && String(u.studentId).includes(keyword))
         )
       }
-      renderUsersTable(filtered)
+      renderUsersTable(filtered, { filtered: Boolean(keyword) || (filter && filter !== 'all') || (collegeFilter && collegeFilter !== 'all') })
     }
 
     // 渲染考试记录
     function renderExamsTable(exams) {
       const tbody = document.getElementById('examsTableBody')
       if (!exams || exams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">暂无模考记录</td></tr>'
+        tbody.innerHTML = '<tr><td colspan="8" class="yx-empty">没有符合条件的模考记录。<button type="button" class="btn btn-ghost" onclick="clearExamFilters()">清除筛选</button></td></tr>'
         return
       }
 
       tbody.innerHTML = exams.map(e => `
         <tr class="hover:bg-slate-50 transition">
           <td class="py-3 px-4 text-slate-500">${formatTime(e.createdAt)}</td>
-          <td class="py-3 px-4 font-semibold text-slate-900">${escapeHtml(e.realName || '--')}</td>
+          <td class="py-3 px-4 font-semibold text-slate-900 yx-sticky-id">${escapeHtml(e.realName || '--')}</td>
           <td class="py-3 px-4 text-slate-600">${escapeHtml(e.className || '--')}</td>
           <td class="py-3 px-4 font-mono text-slate-500">${escapeHtml(e.phone || '--')}</td>
           <td class="py-3 px-4">${escapeHtml(e.bankTitle || '默认题库')}</td>
@@ -1078,37 +1168,68 @@
           document.getElementById('annContact').value = cfg.contactValue || ''
           document.getElementById('annShowMode').value = cfg.showMode || 'always'
           document.getElementById('annImage').value = cfg.image || ''
+          const fail = document.getElementById('annLoadError')
+          if (fail) fail.classList.add('hidden')
           updateAnnouncementPreview()
         }
       } catch (err) {
         console.warn('拉取公告失败:', err)
+        const fail = document.getElementById('annLoadError')
+        if (fail) fail.classList.remove('hidden')
       }
     }
 
     function updateAnnouncementPreview() {
       const enabled = document.getElementById('annEnabled').checked
-      const title = document.getElementById('annTitle').value || '最新公告'
-      const text = document.getElementById('annText').value || '暂无内容'
-      const contact = document.getElementById('annContact').value || 'Corwin07'
-      const img = document.getElementById('annImage').value || ''
-
-      document.getElementById('prevTitle').innerText = title
-      document.getElementById('prevText').innerText = text
-      document.getElementById('prevContact').innerText = contact.split('/')[0] || contact
+      const title = (document.getElementById('annTitle').value || '').trim()
+      const text = (document.getElementById('annText').value || '').trim()
+      const contact = (document.getElementById('annContact').value || '').trim()
+      const img = (document.getElementById('annImage').value || '').trim()
+      const empty = !title && !text && !contact && !img
+      const emptyEl = document.getElementById('prevEmpty')
+      const bodyEl = document.getElementById('prevBody')
+      if (emptyEl) emptyEl.classList.toggle('hidden', !empty)
+      if (bodyEl) bodyEl.classList.toggle('hidden', empty)
+      const titleEl = document.getElementById('prevTitle')
+      const textEl = document.getElementById('prevText')
+      const contactEl = document.getElementById('prevContact')
+      if (titleEl) titleEl.innerText = title || '公告'
+      if (textEl) textEl.innerText = text
+      if (contactEl) contactEl.innerText = contact
       const imgEl = document.getElementById('prevImg')
-      if (img) {
-        imgEl.src = img
-        imgEl.parentElement.style.display = 'flex'
-      } else {
-        imgEl.parentElement.style.display = 'none'
+      const imgFallback = document.getElementById('prevImgFallback')
+      if (imgFallback) imgFallback.classList.add('hidden')
+      if (imgEl) {
+        imgEl.onload = null
+        imgEl.onerror = null
+        if (img) {
+          imgEl.onload = () => {
+            imgEl.classList.remove('hidden', 'd-none')
+            imgEl.style.display = 'block'
+            if (imgFallback) imgFallback.classList.add('hidden')
+          }
+          imgEl.onerror = () => {
+            imgEl.classList.add('hidden')
+            imgEl.style.display = 'none'
+            if (imgFallback) imgFallback.classList.remove('hidden')
+          }
+          imgEl.classList.add('hidden')
+          imgEl.style.display = 'none'
+          imgEl.src = img
+        } else {
+          imgEl.removeAttribute('src')
+          imgEl.classList.add('hidden')
+          imgEl.style.display = 'none'
+        }
       }
-      document.getElementById('previewCard').style.opacity = enabled ? '1' : '0.4'
+      const note = document.getElementById('prevEnabledNote')
+      if (note) note.textContent = enabled ? '已启用：按上方展示模式向小程序弹出。' : '未启用：保存后小程序不会弹出此公告。'
     }
 
     async function saveAnnouncementConfig() {
       const btn = document.getElementById('btnSaveAnn')
       btn.disabled = true
-      btn.innerText = '正在保存并广播...'
+        btn.innerText = '正在同步…'
       try {
         const payload = {
           enabled: document.getElementById('annEnabled').checked,
@@ -1133,7 +1254,7 @@
         showToast('保存异常: ' + e.message, 'error')
       } finally {
         btn.disabled = false
-        btn.innerText = '保存并实时同步给全体小程序用户'
+        btn.innerText = '保存并同步'
       }
     }
 
@@ -1142,8 +1263,8 @@
       try {
         const res = await adminFetch('/api/reminder/admin')
         const json = await res.json()
-        if (json.code === 0 && json.data && json.data.config) {
-          const cfg = json.data.config
+        if (json.code === 0 && json.data) {
+          const cfg = json.data.config || {}
           const tplEl = document.getElementById('remindTemplateId')
           const elecEl = document.getElementById('electricityTemplateId')
           const finEl = document.getElementById('financeJsessionId')
@@ -1152,10 +1273,31 @@
           if (elecEl && cfg.electricityTemplateId) elecEl.value = cfg.electricityTemplateId
           if (finEl && cfg.financeJsessionId) finEl.value = cfg.financeJsessionId
           if (aheadEl && cfg.defaultAheadMinutes) aheadEl.value = cfg.defaultAheadMinutes
+          renderReminderLogs(json.data.logs || [])
         }
       } catch (e) {
         console.warn('读取提醒配置失败:', e)
+        const tbody = document.getElementById('reminderLogsBody')
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="yx-empty">下发日志没有加载成功。<button type="button" class="btn btn-ghost" onclick="loadReminderData()">重试</button></td></tr>'
       }
+    }
+    function renderReminderLogs(logs) {
+      const tbody = document.getElementById('reminderLogsBody')
+      if (!tbody) return
+      if (!logs || !logs.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="yx-empty">暂无下发日志。同学开启上课提醒并成功下发后，记录会出现在这里。</td></tr>'
+        return
+      }
+      const label = { sent: '已发送', failed: '失败', skipped: '跳过' }
+      tbody.innerHTML = logs.map((l) => `
+        <tr>
+          <td>${formatTime(l.createdAt)}</td>
+          <td>${escapeHtml(l.className || '—')}</td>
+          <td>${escapeHtml(l.courseName || '—')}</td>
+          <td>${l.startAt ? formatTime(l.startAt) : '—'}</td>
+          <td><span class="yx-status-pill ${l.status === 'sent' ? 'ok' : 'bad'}">${escapeHtml(label[l.status] || l.status || '—')}</span></td>
+        </tr>
+      `).join('')
     }
     async function saveReminderConfig() {
       try {
@@ -1196,7 +1338,7 @@
       } catch (e) {
         showToast('网络同步异常: ' + e.message, 'error')
       } finally {
-        const label = '<i class="ti ti-cloud-download me-1"></i>从云托管同步'
+        const label = '<i class="ti ti-cloud-download" aria-hidden="true"></i><span class="yx-btn-label">从云托管同步</span>'
         btns.forEach(btn => { btn.disabled = false; btn.innerHTML = label })
       }
     }
@@ -1216,7 +1358,12 @@
       const el = document.getElementById('toast')
       if (!el) return
       document.getElementById('toastMsg').innerText = msg
-      document.getElementById('toastIcon').innerText = type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ')
+      const icon = document.getElementById('toastIcon')
+      if (icon) icon.innerHTML = type === 'error'
+        ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6"/></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>'
+      el.classList.remove('toast-success', 'toast-error', 'toast-info')
+      el.classList.add(type === 'error' ? 'toast-error' : (type === 'success' ? 'toast-success' : 'toast-info'))
       el.classList.add('show')
       el.classList.remove('translate-y-20', 'opacity-0')
       clearTimeout(window.__yxToastTimer)
@@ -1224,6 +1371,81 @@
         el.classList.remove('show')
         el.classList.add('translate-y-20', 'opacity-0')
       }, 3000)
+    }
+
+    let examStatusFilter = 'all'
+
+    function setUserStatusFilter(value, btn) {
+      const sel = document.getElementById('userFilterSelect')
+      if (sel) sel.value = value
+      if (btn && btn.parentElement) {
+        btn.parentElement.querySelectorAll('.yx-filter-chip').forEach((el) => el.classList.remove('is-on'))
+        btn.classList.add('is-on')
+      }
+      handleUserSearch()
+    }
+
+    function clearUserFilters() {
+      const search = document.getElementById('userSearchInput')
+      const sel = document.getElementById('userFilterSelect')
+      const college = document.getElementById('userCollegeFilterSelect')
+      if (search) search.value = ''
+      if (sel) sel.value = 'all'
+      if (college) college.value = 'all'
+      document.querySelectorAll('#userFilterChips .yx-filter-chip').forEach((el, i) => el.classList.toggle('is-on', i === 0))
+      handleUserSearch()
+    }
+
+    function setExamStatusFilter(value, btn) {
+      examStatusFilter = value
+      if (btn && btn.parentElement) {
+        btn.parentElement.querySelectorAll('.yx-filter-chip').forEach((el) => el.classList.remove('is-on'))
+        btn.classList.add('is-on')
+      }
+      handleExamSearch()
+    }
+
+    function handleExamSearch() {
+      if (!globalStats) return
+      const input = document.getElementById('examSearchInput')
+      const keyword = ((input && input.value) || '').trim().toLowerCase()
+      let rows = globalStats.allExams || []
+      if (examStatusFilter === 'pass') rows = rows.filter((e) => e.isPassed)
+      if (examStatusFilter === 'fail') rows = rows.filter((e) => !e.isPassed)
+      if (keyword) {
+        rows = rows.filter((e) =>
+          (e.realName && String(e.realName).toLowerCase().includes(keyword)) ||
+          (e.className && String(e.className).toLowerCase().includes(keyword)) ||
+          (e.bankTitle && String(e.bankTitle).toLowerCase().includes(keyword)) ||
+          (e.phone && String(e.phone).includes(keyword))
+        )
+      }
+      renderExamsTable(rows)
+    }
+
+    function clearExamFilters() {
+      examStatusFilter = 'all'
+      const input = document.getElementById('examSearchInput')
+      if (input) input.value = ''
+      document.querySelectorAll('#examFilterChips .yx-filter-chip').forEach((el, i) => el.classList.toggle('is-on', i === 0))
+      handleExamSearch()
+    }
+
+    function clearCollegeFilters() {
+      const search = document.getElementById('collegeSearchInput')
+      const sel = document.getElementById('collegeSelectDropdown')
+      if (search) search.value = ''
+      if (sel) sel.value = ''
+      renderCollegeCards()
+      onSelectCollegeChange()
+    }
+
+    function clearClassFilters() {
+      const college = document.getElementById('classCollegeFilterSelect')
+      const search = document.getElementById('classStudentSearchInput')
+      if (college) college.value = 'all'
+      if (search) search.value = ''
+      onClassCollegeFilterChange()
     }
 
     function showUserDetailModal(userId) {
@@ -1246,3 +1468,13 @@
     window.refreshCurrentTab = refreshCurrentTab
     window.exportUsersCsv = exportUsersCsv
     window.exportExamsCsv = exportExamsCsv
+    window.setUserStatusFilter = setUserStatusFilter
+    window.clearUserFilters = clearUserFilters
+    window.setExamStatusFilter = setExamStatusFilter
+    window.handleExamSearch = handleExamSearch
+    window.clearExamFilters = clearExamFilters
+    window.clearCollegeFilters = clearCollegeFilters
+    window.clearClassFilters = clearClassFilters
+    window.loadAnnouncementData = loadAnnouncementData
+    window.loadReminderData = loadReminderData
+    window.showUserDetailModal = showUserDetailModal
