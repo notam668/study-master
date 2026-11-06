@@ -74,6 +74,12 @@
                 <span class="nav-link-title">上课提醒</span>
               </a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#transfer-video" id="nav-transfer-video" onclick="switchTab('transfer-video');return false;">
+                <span class="nav-link-icon"><i class="ti ti-video"></i></span>
+                <span class="nav-link-title">转专业视频</span>
+              </a>
+            </li>
                       </ul>
         </div>
       </div>
@@ -427,6 +433,39 @@
             </div>
           </section>
 
+          <!-- TRANSFER VIDEO -->
+          <section id="tab-transfer-video" class="tab-content">
+            <div class="page-header mb-3"><h2 class="page-title">转专业视频（备考课）</h2>
+              <div class="text-secondary">视频存 media.ycgxy.xyz，元数据存 MySQL；上架/下架后小程序下次进入即生效，无需发版</div></div>
+            <div class="row g-3">
+              <div class="col-lg-5">
+                <div class="card"><div class="card-header"><h3 class="card-title">上传新视频</h3></div>
+                  <div class="card-body">
+                    <p id="tvUploadMsg" class="yx-banner hidden" role="alert"></p>
+                    <div class="mb-3"><label class="form-label">视频（mp4，建议 ≤50MB）</label><input id="tvFile" class="form-control" type="file" accept="video/mp4"></div>
+                    <div class="mb-3"><label class="form-label">副标题（接口 title）</label><input id="tvTitle" class="form-control" maxlength="128" placeholder="高数 + 英语 · 完整备考课"></div>
+                    <div class="row g-2 mb-3">
+                      <div class="col"><label class="form-label">时长（秒）</label><input id="tvDuration" class="form-control" type="number" min="1" value="889"></div>
+                      <div class="col"><label class="form-label">排序（越大越靠前）</label><input id="tvSort" class="form-control" type="number" value="0"></div>
+                    </div>
+                    <div class="mb-3"><label class="form-label">海报 jpg/png（可选，≤2MB）</label><input id="tvPoster" class="form-control" type="file" accept="image/jpeg,image/png"></div>
+                    <button type="button" id="tvUploadBtn" class="btn btn-primary" onclick="uploadTransferVideo()">上传并保存（默认下架）</button>
+                    <p class="yx-page-desc" style="margin-top:8px">浏览器直传媒体服务器；保存后在右侧列表点「上架」。</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-7">
+                <div class="card"><div class="card-header"><h3 class="card-title">视频列表</h3>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="loadTransferVideoData()">刷新</button></div>
+                  <div class="table-responsive"><table class="table table-vcenter card-table table-sm yx-dense">
+                    <thead><tr><th>ID</th><th class="yx-sticky-id">标题 / 地址</th><th>时长</th><th>状态</th><th>更新时间</th><th class="yx-sticky-ops">操作</th></tr></thead>
+                    <tbody id="tvTableBody"><tr><td colspan="6" class="yx-empty">登录后加载…</td></tr></tbody>
+                  </table></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
                   </div>
       </div>
 
@@ -465,5 +504,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
   <script src="/js/admin-app.js?v=dense1"></script>
+  <script src="/js/transfer-video.js?v=1"></script>
 </body>
 </html>

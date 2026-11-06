@@ -14,6 +14,7 @@ const electricityRouter = require('./routes/electricity')
 // 2026-10-26 开发部：教务课表（P1 演示接口 /api/jwxt/timetable-demo）
 const jwxtRouter = require('./routes/jwxt')
 const practiceRouter = require('./routes/practice')
+const transferVideoRouter = require('./routes/transferVideo')
 const { securityMiddleware } = require('./middleware/security')
 const scheduleService = require('./services/scheduleService')
 const reminderService = require('./services/reminderService')
@@ -55,6 +56,7 @@ app.use('/api/reminder', reminderRouter)
 app.use('/api/electricity', electricityRouter)
 app.use('/api/jwxt', jwxtRouter)
 app.use('/api/practice', practiceRouter)
+app.use('/api', transferVideoRouter)
 
 // 根路由与健康检查（供云托管探活）
 app.get('/health', (req, res) => {
@@ -122,7 +124,12 @@ if (require.main === module) {
 
     // 启动后台全自动实时轮询同步（间隔可由 CLOUD_SYNC_INTERVAL_SECONDS 调，默认 30 秒）
     const { startAutoSync } = require('./services/cloudSyncService')
-    startAutoSync(Number(process.env.CLOUD_SYNC_INTERVAL_SECONDS) || 30)
+    // 2026-10-30 云端容器内禁用：每 30 秒走公网拉全量仪表盘导致每天 27~53GB 公网流量计费
+    if (process.env.CLOUD_SYNC_DISABLED === '1') {
+      console.log('[CloudSync] 云端容器内已禁用自动同步（CLOUD_SYNC_DISABLED=1）')
+    } else {
+      startAutoSync(Number(process.env.CLOUD_SYNC_INTERVAL_SECONDS) || 600)
+    }
 
     // 启动上课提醒定时扫描
     if (!config.isVercel) {
