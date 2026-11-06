@@ -8,7 +8,11 @@
 
   // 部署时替换为真实域名（占位符，不含密钥）
   var BRIDGE_BASE = 'https://media.ycgxy.xyz' // 例：https://media.ycgxy.xyz
-  var API_BASE = '' // 同源：https://www.ycgxy.xyz
+  // 元数据 API：优先同源（Vercel）；同源返回 503/502 或网络失败时，自动回退云托管公网入口
+  // （云托管 app.use(cors()) 全局放开；鉴权用标准 Authorization: Bearer，避免自定义头预检问题）
+  var API_BASE = ''
+  var CLOUD_API_BASE = 'https://studymaster-299598-11-1471610879.sh.run.tcloudbase.com'
+  var apiSource = 'same-origin' // 'same-origin' | 'cloud'
   var MAX_VIDEO_MB = 50
   var MAX_POSTER_MB = 2
 
@@ -38,16 +42,74 @@
     el.style.display = text ? 'block' : 'none'
   }
 
-  function api(path, options) {
-    var opts = options || {}
-    var headers = Object.assign({}, opts.headers || {})
+  /** 统一鉴权头：用标准 Authorization: Bearer（云托管/桥机都认，跨域预检最稳） */
+  function authHeaders(extra) {
+    var headers = Object.assign({}, extra || {})
     var t = token()
-    if (t) headers['x-admin-token'] = t
-    return fetch(API_BASE + path, Object.assign({}, opts, { headers: headers })).then(function (res) {
-      return res.json().catch(function () {
-        return { code: res.status, message: 'HTTP ' + res.status }
-      })
+    if (t) headers['Authorization'] = 'Bearer ' + t
+    return headers
+  }
+
+  function readJson(res) {
+    return res.json().catch(function () {
+      return { code: res.status, message: 'HTTP ' + res.status }
     })
+  }
+
+  function shouldFallback(res) {
+    return res.status === 503 || res.status === 502
+  }
+
+  function rawApi(base, path, options) {
+    var opts = options || {}
+    return fetch(base + path, Object.assign({}, opts, { headers: authHeaders(opts.headers) }))
+  }
+
+  /** 元数据 API：同源 → 503/502/网络错误时自动切云托管，并在页面顶部标出当前 API 源 */
+  function api(path, options) {
+    if (API_BASE !== '') return rawApi(API_BASE, path, options).then(readJson)
+    return rawApi('', path, options)
+      .then(function (res) {
+        if (shouldFallback(res)) {
+          return rawApi(CLOUD_API_BASE, path, options).then(function (r2) {
+            updateApiSource('cloud')
+            return r2
+          })
+        }
+        updateApiSource('same-origin')
+        return res
+      })
+      .catch(function () {
+        return rawApi(CLOUD_API_BASE, path, options).then(function (r2) {
+          updateApiSource('cloud')
+          return r2
+        })
+      })
+      .then(readJson)
+  }
+
+  function updateApiSource(source) {
+    apiSource = source
+    var el = $('tvApiSource')
+    if (!el) return
+    el.textContent =
+      source === 'cloud'
+        ? 'API 源：云托管（' + CLOUD_API_BASE + '）'
+        : 'API 源：同源（' + location.origin + '）'
+    el.className = 'text-secondary small mb-2' + (source === 'cloud' ? ' text-warning' : '')
+  }
+
+  function ensureApiSourceBadge() {
+    if ($('tvApiSource')) return
+    var tab = $('tab-transfer-video')
+    if (!tab) return
+    var div = document.createElement('div')
+    div.id = 'tvApiSource'
+    div.className = 'text-secondary small mb-2'
+    div.textContent = 'API 源：同源（' + location.origin + '）'
+    var header = tab.querySelector('.page-header')
+    if (header && header.parentNode) header.parentNode.insertBefore(div, header.nextSibling)
+    else tab.insertBefore(div, tab.firstChild)
   }
 
   function fmtDuration(sec) {
@@ -100,6 +162,7 @@
   }
 
   function loadTransferVideoData() {
+    ensureApiSourceBadge()
     if (!token()) {
       msg('请先在上方输入管理员密码进入后台，再管理视频。', true)
       return Promise.resolve()
@@ -121,7 +184,7 @@
     fd.append(field, file, file.name)
     return fetch(BRIDGE_BASE + url, {
       method: 'POST',
-      headers: { 'x-admin-token': token() },
+      headers: authHeaders(),
       body: fd,
     }).then(function (res) {
       return res.json().catch(function () {
@@ -229,6 +292,7 @@
   window.transferVideoSetStatus = transferVideoSetStatus
 
   document.addEventListener('DOMContentLoaded', function () {
+    ensureApiSourceBadge()
     var fileEl = $('tvFile')
     if (fileEl) {
       fileEl.addEventListener('change', function () {
