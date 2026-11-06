@@ -220,7 +220,7 @@
       // 检查 hash
       const hash = window.location.hash.replace('#', '')
       if (hash === 'codes') hash = 'dashboard'
-      if (['dashboard', 'colleges', 'classes', 'users', 'exams', 'announcement', 'reminder'].includes(hash)) {
+      if (['dashboard', 'colleges', 'classes', 'users', 'exams', 'announcement', 'reminder', 'transfer-video'].includes(hash)) {
         switchTab(hash)
       } else {
         switchTab('dashboard')
@@ -288,6 +288,7 @@
       // 按需加载特定模块
       if (tabId === 'announcement') loadAnnouncementData()
       if (tabId === 'reminder') loadReminderData()
+      if (tabId === 'transfer-video' && window.loadTransferVideoData) window.loadTransferVideoData()
     }
 
     function refreshCurrentTab(showTip = false) {
@@ -295,6 +296,7 @@
       loadAllData()
       if (currentTab === 'announcement') loadAnnouncementData()
       if (currentTab === 'reminder') loadReminderData()
+      if (currentTab === 'transfer-video' && window.loadTransferVideoData) window.loadTransferVideoData()
     }
 
     function rosterMessage(colspan, message, actionHtml) {
